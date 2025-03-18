@@ -61,14 +61,31 @@ cd lotus/skill_learning
 
 ### Encoding Representation
 ```shell
-python multisensory_repr/dinov2_repr.py  --exp-name dinov2_libero_object_image_only --modality-str dinov2_agentview_eye_in_hand --feature-dim 1536
+python multisensory_repr/dinov2_repr.py  --exp-name dinov2_libero_spatial_image_only --modality-str dinov2_agentview_eye_in_hand --feature-dim 1536
 ```
 Output: 
 - `results/{exp_name}/repr/{DatasetCategoty}/{DatasetName}/embedding_{modality_str}_{feature_dim}.hdf5`
 
+change to your datasets in `dinov2_repr.py`
+
+```py
+Dataset_Name_List = [
+    "../datasets/libero_spatial/pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_cookie_box_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_ramekin_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_cookie_box_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_stove_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_plate_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate_demo",
+]
+```
+
 ### Hierarchical Agglomerative Clustering
 ```shell
-python skill_discovery/hierarchical_agglomoration.py exp_name=dinov2_libero_object_image_only modality_str=dinov2_agentview_eye_in_hand repr.z_dim=1536 agglomoration.dist=cos agglomoration.footprint=global_pooling
+python skill_discovery/hierarchical_agglomoration.py exp_name=dinov2_libero_spatial_image_only modality_str=dinov2_agentview_eye_in_hand repr.z_dim=1536 agglomoration.dist=cos agglomoration.footprint=global_pooling
 ```
 Output: 
 - `results/{exp_name}/skill_classification/agglomoration_results/{DatasetCategoty}/{DatasetName}/{agglomoration.footprint}_{agglomoration.dist}_{modality_str}/{idx}.png`
@@ -76,12 +93,27 @@ Output:
 
 ### Spectral Clustering
 ```shell
-python skill_discovery/agglomoration_script.py exp_name=dinov2_libero_object_image_only modality_str=dinov2_agentview_eye_in_hand repr.z_dim=1536 agglomoration.segment_scale=1 agglomoration.min_len_thresh=30 agglomoration.K=2 agglomoration.scale=0.01 agglomoration.dist=cos
+python skill_discovery/agglomoration_script.py exp_name=dinov2_libero_spatial_image_only modality_str=dinov2_agentview_eye_in_hand repr.z_dim=1536 agglomoration.segment_scale=1 agglomoration.min_len_thresh=30 agglomoration.K=2 agglomoration.scale=0.01 agglomoration.dist=cos agglomoration.footprint=global_pooling
 ```
 Output:
 - `results/{exp_name}_{current_task_num}/skill_data/{DatasetCategoty}/{DatasetCategoty}/{DatasetName}_subtasks_{modality_str}_{feature_dim}_mean_{agglomoration.dist}_concat_1_K{agglomoration.K}_{cfg.agglomoration.affinity}.hdf5`
 
+Also need to change to your datasets in `agglomoration_script.py`
 
+```py
+dataset_name_list = [
+    "libero_spatial/pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate_demo",
+    "libero_spatial/pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate_demo",
+    "libero_spatial/pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate_demo",
+    "libero_spatial/pick_up_the_black_bowl_on_the_cookie_box_and_place_it_on_the_plate_demo",
+    "libero_spatial/pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_demo",
+    "libero_spatial/pick_up_the_black_bowl_on_the_ramekin_and_place_it_on_the_plate_demo",
+    "libero_spatial/pick_up_the_black_bowl_next_to_the_cookie_box_and_place_it_on_the_plate_demo",
+    "libero_spatial/pick_up_the_black_bowl_on_the_stove_and_place_it_on_the_plate_demo",
+    "libero_spatial/pick_up_the_black_bowl_next_to_the_plate_and_place_it_on_the_plate_demo",
+    "libero_spatial/pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate_demo",
+]
+```
 
 ### Save Dinov2 Feature for Hierarchical Policy Training
 ```shell
