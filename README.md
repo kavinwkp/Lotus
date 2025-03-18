@@ -61,7 +61,7 @@ cd lotus/skill_learning
 
 ### Encoding Representation
 ```shell
-python multisensory_repr/dinov2_repr.py  --exp-name dinov2_libero_spatial_image_only --modality-str dinov2_agentview_eye_in_hand --feature-dim 1536
+python multisensory_repr/dinov2_repr.py  --exp-name dinov2_libero_spatial_image_only --modality-str dinov2_agentview_eye_in_hand --feature-dim 1536 --batch-size 64
 ```
 Output: 
 - `results/{exp_name}/repr/{DatasetCategoty}/{DatasetName}/embedding_{modality_str}_{feature_dim}.hdf5`
@@ -82,6 +82,8 @@ Dataset_Name_List = [
     "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate_demo",
 ]
 ```
+
+should use `--batch-size 64` due to the memory limitation.
 
 ### Hierarchical Agglomerative Clustering
 ```shell
@@ -118,10 +120,30 @@ dataset_name_list = [
 ### Save Dinov2 Feature for Hierarchical Policy Training
 ```shell
 cd lotus/skill_learning
-python multisensory_repr/save_dinov2_repr.py
+python multisensory_repr/save_dinov2_repr.py --batch-size 64
 ```
 Output: 
 - `../datasets/dinov2/{DatasetCategoty}/{DatasetName}.hdf5`
+
+should use `--batch-size 64` due to the memory limitation.
+
+Also need to change to your datasets in `save_dinov2_repr.py`
+```py
+Dataset_Name_List = [
+    "../datasets/libero_spatial/pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_cookie_box_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_ramekin_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_cookie_box_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_stove_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_plate_and_place_it_on_the_plate_demo",
+    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate_demo",
+]
+```
+
+The different between `save_dinov2_repr.py` and `dinov2_repr.py` is that `save_dinov2_repr.py` will save the `agentview_features`, the shape of one demo is `(len, 1, 768)`., while `dinov2_repr.py` will save the `agentview_features` and `eye_in_hand_features`, so the shape of one demo is `(len, 1, 1536)`.
 
 ## Training
 To start a lifelong learning experiment, please choose:
