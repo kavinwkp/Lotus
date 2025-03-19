@@ -143,7 +143,7 @@ Dataset_Name_List = [
 ]
 ```
 
-The different between `save_dinov2_repr.py` and `dinov2_repr.py` is that `save_dinov2_repr.py` will save the `agentview_features`, the shape of one demo is `(len, 1, 768)`., while `dinov2_repr.py` will save the `agentview_features` and `eye_in_hand_features`, so the shape of one demo is `(len, 1, 1536)`.
+The different between `save_dinov2_repr.py` and `dinov2_repr.py` is that `save_dinov2_repr.py` will save the `agentview_features`, the shape of one demo is `(len, 1, 768)`, while `dinov2_repr.py` will save the `agentview_features` and `eye_in_hand_features`, so the shape of one demo is `(len, 1, 1536)`.
 
 ## Training
 To start a lifelong learning experiment, please choose:
