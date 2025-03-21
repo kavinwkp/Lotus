@@ -36,7 +36,7 @@ class SubSkill(Sequential):
     def start_task(self, task):
         super().start_task(task)
     
-    def learn_one_skill(self, dataset, benchmark, result_summary, skill_id, use_wandb):
+    def learn_one_skill(self, dataset, skill_id, use_wandb):
         self.start_task(-1)
 
         model_checkpoint_name = os.path.join(
@@ -84,7 +84,7 @@ class SubSkill(Sequential):
                     "Skill_Training/step": epoch,
                 })
 
-            if epoch % self.cfg.eval.eval_every == 0:  # evaluate BC loss
+            if epoch > 0 and (epoch % self.cfg.eval.eval_every == 0):  # evaluate BC loss
                 t0 = time.time()
                 self.policy.eval()
                 losses.append(training_loss)
@@ -192,12 +192,10 @@ class MetaController(Sequential):
             loss, ce_loss, embedding_loss, kl_loss = self.policy.compute_loss(data)
         return loss.item(), ce_loss.item(), embedding_loss.item(), kl_loss.item()
 
-    def learn_multi_task(self, dataset, benchmark, result_summary, use_wandb):
+    def learn_multi_task(self, dataset, benchmark, use_wandb):
         self.start_task(-1)
 
-        model_checkpoint_name = os.path.join(
-            self.experiment_dir, f"meta_controller_model.pth"
-        )
+        model_checkpoint_name = os.path.join(self.experiment_dir, f"meta_controller_model.pth")
         all_tasks = list(range(benchmark.n_tasks))
 
         train_dataloader = DataLoader(
@@ -276,7 +274,7 @@ class MetaController(Sequential):
                     "MetaPolicy_Training/step": epoch,
                 })
             
-            if epoch % self.cfg.eval.eval_every == 0:  # evaluate BC loss
+            if epoch > 0 and (epoch % self.cfg.eval.eval_every == 0):  # evaluate BC loss
                 t0 = time.time()
                 self.policy.eval()
                 model_checkpoint_name_ep = os.path.join(
@@ -307,9 +305,8 @@ class MetaController(Sequential):
                 # this can be quite computationally expensive. Nevertheless, we
                 # save the checkpoints, so users can always evaluate afterwards.
                 if self.cfg.lifelong.eval_in_train:
-                    success_rates = evaluate_multitask_training_success(
-                        self.cfg, self, benchmark, all_tasks
-                    )
+                    success_rates = evaluate_multitask_training_success(self.cfg, self, benchmark, all_tasks)
+                    print("success_rate:", success_rates)
                     success_rate = np.mean(success_rates)
                 else:
                     success_rates = np.zeros(len(all_tasks))
@@ -330,34 +327,34 @@ class MetaController(Sequential):
                 tmp_successes = np.array(successes)
                 tmp_successes[idx_at_best_succ:] = successes[idx_at_best_succ]
 
-                if self.cfg.lifelong.eval_in_train:
-                    print(
-                        f"[info] Epoch: {epoch:3d} | succ: {success_rate:4.2f} ± {ci:4.2f} | best succ: {prev_success_rate} "
-                        + f"| succ. AoC {tmp_successes.sum()/cumulated_counter:4.2f} | time: {(t1-t0)/60:4.2f}",
-                        flush=True,
-                    )
-                    # plot the success rate curve to visualize the success rate on each task
-                    plt.figure(figsize=(10, 5))
-                    bars = plt.bar(np.arange(len(success_rates)), success_rates, align='center', alpha=0.75)
-                    plt.title(f"Success Rates at Epoch {epoch}, total {success_rate}")
-                    plt.xlabel("Task Index")
-                    plt.ylabel("Success Rate")
-                    plt.ylim(0, 1.1) 
-                    for bar in bars:
-                        yval = bar.get_height()
-                        plt.text(bar.get_x() + bar.get_width()/2, yval + 0.02, round(yval, 2), ha='center', va='bottom')
-
-
-                    if use_wandb:
-                        wandb.log({
-                            f"MetaPolicy_Training/all_task_success_rate": success_rate,
-                            f"MetaPolicy_Training/all_task_best_success_rate": prev_success_rate,
-                            f"MetaPolicy_Training/all_task_AoC": tmp_successes.sum()/cumulated_counter,
-                            f"MetaPolicy_Training/all_task_eval_time": (t1-t0)/60,
-                            "MetaPolicy_Training/step": epoch,
-                            "MetaPolicy_Training/task_suceess_rate": wandb.Image(plt),
-                        })
-                    plt.close()
+                # if self.cfg.lifelong.eval_in_train:
+                #     print(
+                #         f"[info] Epoch: {epoch:3d} | succ: {success_rate:4.2f} ± {ci:4.2f} | best succ: {prev_success_rate} "
+                #         + f"| succ. AoC {tmp_successes.sum()/cumulated_counter:4.2f} | time: {(t1-t0)/60:4.2f}",
+                #         flush=True,
+                #     )
+                #     # plot the success rate curve to visualize the success rate on each task
+                #     plt.figure(figsize=(10, 5))
+                #     bars = plt.bar(np.arange(len(success_rates)), success_rates, align='center', alpha=0.75)
+                #     plt.title(f"Success Rates at Epoch {epoch}, total {success_rate}")
+                #     plt.xlabel("Task Index")
+                #     plt.ylabel("Success Rate")
+                #     plt.ylim(0, 1.1)
+                #     for bar in bars:
+                #         yval = bar.get_height()
+                #         plt.text(bar.get_x() + bar.get_width()/2, yval + 0.02, round(yval, 2), ha='center', va='bottom')
+                #
+                #
+                #     if use_wandb:
+                #         wandb.log({
+                #             f"MetaPolicy_Training/all_task_success_rate": success_rate,
+                #             f"MetaPolicy_Training/all_task_best_success_rate": prev_success_rate,
+                #             f"MetaPolicy_Training/all_task_AoC": tmp_successes.sum()/cumulated_counter,
+                #             f"MetaPolicy_Training/all_task_eval_time": (t1-t0)/60,
+                #             "MetaPolicy_Training/step": epoch,
+                #             "MetaPolicy_Training/task_suceess_rate": wandb.Image(plt),
+                #         })
+                #     plt.close()
             
             if self.scheduler is not None and epoch > 0:
                 self.scheduler.step()
