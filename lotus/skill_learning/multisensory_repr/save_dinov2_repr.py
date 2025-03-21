@@ -29,18 +29,49 @@ from models.model_utils import safe_cuda
 # import init_path
 # from utils.video_utils import KaedeVideoWriter
 
-Dataset_Name_List = [
-    "../datasets/libero_spatial/pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate_demo",
-    "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate_demo",
-    "../datasets/libero_spatial/pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate_demo",
-    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_cookie_box_and_place_it_on_the_plate_demo",
-    "../datasets/libero_spatial/pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_demo",
-    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_ramekin_and_place_it_on_the_plate_demo",
-    "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_cookie_box_and_place_it_on_the_plate_demo",
-    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_stove_and_place_it_on_the_plate_demo",
-    "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_plate_and_place_it_on_the_plate_demo",
-    "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate_demo",
-]
+# Dataset = "libero_object"
+# Dataset = "libero_spatial"
+Dataset = "libero_goal"
+
+if Dataset == "libero_object":
+    dataset_name_list = [
+        "../datasets/libero_object/pick_up_the_alphabet_soup_and_place_it_in_the_basket_demo",
+        "../datasets/libero_object/pick_up_the_cream_cheese_and_place_it_in_the_basket_demo",
+        "../datasets/libero_object/pick_up_the_salad_dressing_and_place_it_in_the_basket_demo",
+        "../datasets/libero_object/pick_up_the_bbq_sauce_and_place_it_in_the_basket_demo",
+        "../datasets/libero_object/pick_up_the_ketchup_and_place_it_in_the_basket_demo",
+        "../datasets/libero_object/pick_up_the_tomato_sauce_and_place_it_in_the_basket_demo",
+        "../datasets/libero_object/pick_up_the_butter_and_place_it_in_the_basket_demo",
+        "../datasets/libero_object/pick_up_the_milk_and_place_it_in_the_basket_demo",
+        "../datasets/libero_object/pick_up_the_chocolate_pudding_and_place_it_in_the_basket_demo",
+        "../datasets/libero_object/pick_up_the_orange_juice_and_place_it_in_the_basket_demo",
+    ]
+elif Dataset == "libero_spatial":
+    Dataset_Name_List = [
+        "../datasets/libero_spatial/pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate_demo",
+        "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate_demo",
+        "../datasets/libero_spatial/pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate_demo",
+        "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_cookie_box_and_place_it_on_the_plate_demo",
+        "../datasets/libero_spatial/pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_demo",
+        "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_ramekin_and_place_it_on_the_plate_demo",
+        "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_cookie_box_and_place_it_on_the_plate_demo",
+        "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_stove_and_place_it_on_the_plate_demo",
+        "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_plate_and_place_it_on_the_plate_demo",
+        "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate_demo",
+    ]
+elif Dataset == "libero_goal":
+    Dataset_Name_List = [
+        "../datasets/libero_goal/open_the_middle_drawer_of_the_cabinet_demo",
+        "../datasets/libero_goal/open_the_top_drawer_and_put_the_bowl_inside_demo",
+        "../datasets/libero_goal/push_the_plate_to_the_front_of_the_stove_demo",
+        "../datasets/libero_goal/put_the_bowl_on_the_plate_demo",
+        "../datasets/libero_goal/put_the_bowl_on_the_stove_demo",
+        "../datasets/libero_goal/put_the_bowl_on_top_of_the_cabinet_demo",
+        "../datasets/libero_goal/put_the_cream_cheese_in_the_bowl_demo",
+        "../datasets/libero_goal/put_the_wine_bottle_on_the_rack_demo",
+        "../datasets/libero_goal/put_the_wine_bottle_on_top_of_the_cabinet_demo",
+        "../datasets/libero_goal/turn_on_the_stove_demo",
+    ]
 
 class DinoV2ImageProcessor(object):
     def __init__(self, args=None):
