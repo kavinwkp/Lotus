@@ -23,52 +23,11 @@ from PIL import Image
 DEL_COST = INS_COST = 1.0
 SUB_COST = 1.0
 
-# Dataset = "libero_object"
-# Dataset = "libero_spatial"
-Dataset = "libero_goal"
 
-if Dataset == "libero_object":
-    dataset_name_list = [
-        "libero_object/pick_up_the_alphabet_soup_and_place_it_in_the_basket_demo",
-        "libero_object/pick_up_the_cream_cheese_and_place_it_in_the_basket_demo",
-        "libero_object/pick_up_the_salad_dressing_and_place_it_in_the_basket_demo",
-        "libero_object/pick_up_the_bbq_sauce_and_place_it_in_the_basket_demo",
-        "libero_object/pick_up_the_ketchup_and_place_it_in_the_basket_demo",
-        "libero_object/pick_up_the_tomato_sauce_and_place_it_in_the_basket_demo",
-        "libero_object/pick_up_the_butter_and_place_it_in_the_basket_demo",
-        "libero_object/pick_up_the_milk_and_place_it_in_the_basket_demo",
-        "libero_object/pick_up_the_chocolate_pudding_and_place_it_in_the_basket_demo",
-        "libero_object/pick_up_the_orange_juice_and_place_it_in_the_basket_demo",
-    ]
-elif Dataset == "libero_spatial":
-    dataset_name_list = [
-        "libero_spatial/pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate_demo",
-        "libero_spatial/pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate_demo",
-        "libero_spatial/pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate_demo",
-        "libero_spatial/pick_up_the_black_bowl_on_the_cookie_box_and_place_it_on_the_plate_demo",
-        "libero_spatial/pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_demo",
-        "libero_spatial/pick_up_the_black_bowl_on_the_ramekin_and_place_it_on_the_plate_demo",
-        "libero_spatial/pick_up_the_black_bowl_next_to_the_cookie_box_and_place_it_on_the_plate_demo",
-        "libero_spatial/pick_up_the_black_bowl_on_the_stove_and_place_it_on_the_plate_demo",
-        "libero_spatial/pick_up_the_black_bowl_next_to_the_plate_and_place_it_on_the_plate_demo",
-        "libero_spatial/pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate_demo",
-    ]
-elif Dataset == "libero_goal":
-    dataset_name_list = [
-        "libero_goal/open_the_middle_drawer_of_the_cabinet_demo",
-        "libero_goal/open_the_top_drawer_and_put_the_bowl_inside_demo",
-        "libero_goal/push_the_plate_to_the_front_of_the_stove_demo",
-        "libero_goal/put_the_bowl_on_the_plate_demo",
-        "libero_goal/put_the_bowl_on_the_stove_demo",
-        "libero_goal/put_the_bowl_on_top_of_the_cabinet_demo",
-        "libero_goal/put_the_cream_cheese_in_the_bowl_demo",
-        "libero_goal/put_the_wine_bottle_on_the_rack_demo",
-        "libero_goal/put_the_wine_bottle_on_top_of_the_cabinet_demo",
-        "libero_goal/turn_on_the_stove_demo",
-    ]
 
-base_dataset_name_list = dataset_name_list[0:6]
-lifelong_dataset_name_list = dataset_name_list[6:10]
+
+
+
 
 
 
@@ -689,25 +648,25 @@ def agglomoration_func(cfg, modality_str, dataset_name_list):
         hf.create_dataset('demo_indices', data=demo_indices)
         hf.create_dataset('seg_start', data=seg_start)
         hf.create_dataset('seg_end', data=seg_end)
-    X = [(e, l, d, ep) for (e, l, d, ep, _, _) in X]
-    for lifelong_dataset_name in lifelong_dataset_name_list:
-        print(f"add new data: {lifelong_dataset_name}")
-        ep_subtasks_seq, X, dataset_name_list = add_new_data(cfg, modality_str, ep_subtasks_seq, X, dataset_name_list, lifelong_dataset_name)
-        embeddings = [x[0] for x in X]
-        cluster_labels = [x[1] for x in X]
-        task_ids = [x[2] for x in X]
-        demo_indices = [x[3] for x in X]
-        seg_start = [x[4] for x in X]
-        seg_end = [x[5] for x in X]
-        save_exp_name = f"{cfg.exp_name}_{len(dataset_name_list)}"
-        with h5py.File(f"results/{save_exp_name}/skill_data/saved_feature_data.hdf5", 'w') as hf:
-            hf.create_dataset('embeddings', data=np.stack(embeddings))
-            hf.create_dataset('cluster_labels', data=cluster_labels)
-            hf.create_dataset('task_ids', data=task_ids)
-            hf.create_dataset('demo_indices', data=demo_indices)
-            hf.create_dataset('seg_start', data=seg_start)
-            hf.create_dataset('seg_end', data=seg_end)
-        X = [(e, l, d, ep) for (e, l, d, ep, _, _) in X]
+    # X = [(e, l, d, ep) for (e, l, d, ep, _, _) in X]
+    # for lifelong_dataset_name in lifelong_dataset_name_list:
+    #     print(f"add new data: {lifelong_dataset_name}")
+    #     ep_subtasks_seq, X, dataset_name_list = add_new_data(cfg, modality_str, ep_subtasks_seq, X, dataset_name_list, lifelong_dataset_name)
+    #     embeddings = [x[0] for x in X]
+    #     cluster_labels = [x[1] for x in X]
+    #     task_ids = [x[2] for x in X]
+    #     demo_indices = [x[3] for x in X]
+    #     seg_start = [x[4] for x in X]
+    #     seg_end = [x[5] for x in X]
+    #     save_exp_name = f"{cfg.exp_name}_{len(dataset_name_list)}"
+    #     with h5py.File(f"results/{save_exp_name}/skill_data/saved_feature_data.hdf5", 'w') as hf:
+    #         hf.create_dataset('embeddings', data=np.stack(embeddings))
+    #         hf.create_dataset('cluster_labels', data=cluster_labels)
+    #         hf.create_dataset('task_ids', data=task_ids)
+    #         hf.create_dataset('demo_indices', data=demo_indices)
+    #         hf.create_dataset('seg_start', data=seg_start)
+    #         hf.create_dataset('seg_end', data=seg_end)
+    #     X = [(e, l, d, ep) for (e, l, d, ep, _, _) in X]
 
 def find_medoid(cluster_data, distance_fn):
     if distance_fn == "l2":
@@ -1235,7 +1194,53 @@ def main(hydra_cfg):
     
     print(f"Footprint: {cfg.agglomoration.footprint}, Dist: {cfg.agglomoration.dist}, Segment: {cfg.agglomoration.segment_footprint}, K: {cfg.agglomoration.K}, Affinity: {cfg.agglomoration.affinity}")
 
-    modality_str =cfg.modality_str
+    modality_str = cfg.modality_str
+
+    parser = argparse.ArgumentParser()
+
+    if cfg.benchmark_name == "libero_object":
+        dataset_name_list = [
+            "../datasets/libero_object/pick_up_the_alphabet_soup_and_place_it_in_the_basket_demo",
+            "../datasets/libero_object/pick_up_the_cream_cheese_and_place_it_in_the_basket_demo",
+            "../datasets/libero_object/pick_up_the_salad_dressing_and_place_it_in_the_basket_demo",
+            "../datasets/libero_object/pick_up_the_bbq_sauce_and_place_it_in_the_basket_demo",
+            "../datasets/libero_object/pick_up_the_ketchup_and_place_it_in_the_basket_demo",
+            "../datasets/libero_object/pick_up_the_tomato_sauce_and_place_it_in_the_basket_demo",
+            "../datasets/libero_object/pick_up_the_butter_and_place_it_in_the_basket_demo",
+            "../datasets/libero_object/pick_up_the_milk_and_place_it_in_the_basket_demo",
+            "../datasets/libero_object/pick_up_the_chocolate_pudding_and_place_it_in_the_basket_demo",
+            "../datasets/libero_object/pick_up_the_orange_juice_and_place_it_in_the_basket_demo",
+        ]
+    elif cfg.benchmark_name == "libero_spatial":
+        dataset_name_list = [
+            "../datasets/libero_spatial/pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate_demo",
+            "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate_demo",
+            "../datasets/libero_spatial/pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate_demo",
+            "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_cookie_box_and_place_it_on_the_plate_demo",
+            "../datasets/libero_spatial/pick_up_the_black_bowl_in_the_top_drawer_of_the_wooden_cabinet_and_place_it_on_the_plate_demo",
+            "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_ramekin_and_place_it_on_the_plate_demo",
+            "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_cookie_box_and_place_it_on_the_plate_demo",
+            "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_stove_and_place_it_on_the_plate_demo",
+            "../datasets/libero_spatial/pick_up_the_black_bowl_next_to_the_plate_and_place_it_on_the_plate_demo",
+            "../datasets/libero_spatial/pick_up_the_black_bowl_on_the_wooden_cabinet_and_place_it_on_the_plate_demo",
+        ]
+    elif cfg.benchmark_name == "libero_goal":
+        dataset_name_list = [
+            "../datasets/libero_goal/open_the_middle_drawer_of_the_cabinet_demo",
+            "../datasets/libero_goal/open_the_top_drawer_and_put_the_bowl_inside_demo",
+            "../datasets/libero_goal/push_the_plate_to_the_front_of_the_stove_demo",
+            "../datasets/libero_goal/put_the_bowl_on_the_plate_demo",
+            "../datasets/libero_goal/put_the_bowl_on_the_stove_demo",
+            "../datasets/libero_goal/put_the_bowl_on_top_of_the_cabinet_demo",
+            "../datasets/libero_goal/put_the_cream_cheese_in_the_bowl_demo",
+            "../datasets/libero_goal/put_the_wine_bottle_on_the_rack_demo",
+            "../datasets/libero_goal/put_the_wine_bottle_on_top_of_the_cabinet_demo",
+            "../datasets/libero_goal/turn_on_the_stove_demo",
+        ]
+
+    base_dataset_name_list = dataset_name_list  # all to skill discovery , not to add new skill for continual learning
+    # base_dataset_name_list = dataset_name_list[0:6]
+    # lifelong_dataset_name_list = dataset_name_list[6:10]
 
     agglomoration_func(cfg, modality_str, base_dataset_name_list)
 

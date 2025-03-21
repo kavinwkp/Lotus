@@ -10,6 +10,7 @@ defaults:
   - eval: defaults
   - video: defaults
 exp_name: libero_object_goal
+benchmark_name: libero_object
 modality_str: dinov2_agentview_eye_in_hand
 use_checkpoint: false
 record_states: true
