@@ -1232,8 +1232,8 @@ def main(hydra_cfg):
             "libero_goal/turn_on_the_stove_demo",
         ]
 
-    base_dataset_name_list = dataset_name_list  # all to skill discovery , not to add new skill for continual learning
-    # base_dataset_name_list = dataset_name_list[0:6]
+
+    base_dataset_name_list = dataset_name_list[0:6]
     # lifelong_dataset_name_list = dataset_name_list[6:10]
     agglomoration_func(cfg, modality_str, base_dataset_name_list)
 
