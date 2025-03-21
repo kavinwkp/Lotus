@@ -751,7 +751,7 @@ class MetaPolicySequenceDataset(Dataset):
             if not any(used_data_file_name in data_file_name for used_data_file_name in used_data_file_name_list):
                 continue
             data_file = h5py.File(data_file_name, "r")
-            dataset_category, dataset_name = data_file_name.split("/")[1:]
+            dataset_category, dataset_name = data_file_name.split("/")[2:]  # ['lotus', 'datasets', 'libero_spatial', 'xxx_demo.hdf5']
             dataset_name = dataset_name.split(".")[0]
             subtasks_file = h5py.File(subtasks_file_name, "r")
             task_idx = task_names.index(dataset_name.split("_demo")[0])

@@ -44,9 +44,9 @@ import matplotlib.pyplot as plt
 import glob
 import h5py
 import init_path
-from skill_learning.models.model_utils import safe_cuda
-from skill_learning.models.conf_utils import *
-from skill_learning.models.torch_utils import *
+from lotus.skill_learning.models.model_utils import safe_cuda
+from lotus.skill_learning.models.conf_utils import *
+from lotus.skill_learning.models.torch_utils import *
 
 def get_subtask_label(idx, saved_ep_subtasks_seq, horizon):
     for (start_idx, end_idx, subtask_label) in saved_ep_subtasks_seq:
@@ -57,10 +57,10 @@ def save_subgoal_embedding(cfg, networks, data_file_name_list, skill_learning_cf
     subgoal_embedding_file_name = os.path.join(cfg.experiment_dir, f"subgoal_embedding.hdf5")
     subgoal_embedding_file = h5py.File(subgoal_embedding_file_name, "w")
     for data_file_name in data_file_name_list:
-        dataset_category, dataset_name = data_file_name.split("/")[1:]
-        dataset_name = dataset_name.split(".")[0]
+        dataset_category, dataset_name = data_file_name.split("/")[2:]  # ['lotus', 'datasets', 'libero_spatial', 'xxx_demo.hdf5']
+        dataset_name = dataset_name.split(".")[0]   # xxx_demo
         demo_file = h5py.File(f"{data_file_name}", "r")
-        file_pattern = f"skill_learning/results/{skill_exp_name}/skill_data/{dataset_category}/{dataset_name}*"
+        file_pattern = f"lotus/skill_learning/results/{skill_exp_name}/skill_data/{dataset_category}/{dataset_name}*"
         matching_files = glob.glob(file_pattern)
         subtasks_file_name = matching_files[0]
         subtask_file = h5py.File(subtasks_file_name, "r")
@@ -121,14 +121,14 @@ def main(hydra_cfg):
     cfg = EasyDict(yaml.safe_load(yaml_config))
 
     # print configs to terminal
-    pp = pprint.PrettyPrinter(indent=2)
-    pp.pprint(cfg)
-
-    pp.pprint("Available algorithms:")
-    pp.pprint(get_algo_list())
-
-    pp.pprint("Available policies:")
-    pp.pprint(get_policy_list())
+    # pp = pprint.PrettyPrinter(indent=2)
+    # pp.pprint(cfg)
+    #
+    # pp.pprint("Available algorithms:")
+    # pp.pprint(get_algo_list())
+    #
+    # pp.pprint("Available policies:")
+    # pp.pprint(get_policy_list())
 
     # control seed
     control_seed(cfg.seed)
@@ -150,13 +150,13 @@ def main(hydra_cfg):
         # currently we assume tasks from same benchmark have the same shape_meta
         try:
             task_i_dataset, shape_meta = get_dataset(
-                dataset_path=os.path.join(
-                    cfg.folder, benchmark.get_task_demonstration(i)
-                ),
+                dataset_path=os.path.join(cfg.folder, benchmark.get_task_demonstration(i)),
                 obs_modality=cfg.data.obs.modality,
                 initialize_obs_utils=(i == 0),
                 seq_len=cfg.data.seq_len,
             )
+            # shape_meta: {'ac_dim': 7, 'all_shapes': OrderedDict([('agentview_rgb', [3, 128, 128]), ('eye_in_hand_rgb', [3, 128, 128]), ('gripper_states', [2]), ('joint_states', [7])]), 
+            # 'all_obs_keys': ['agentview_rgb', 'eye_in_hand_rgb', 'gripper_states', 'joint_states'], 'use_images': True}
         except Exception as e:
             print(
                 f"[error] failed to load task {i} name {benchmark.get_task_names()[i]}"
@@ -168,26 +168,38 @@ def main(hydra_cfg):
         descriptions.append(task_description)
         # manip_datasets.append(task_i_dataset)
 
-    task_embs = get_task_embs(cfg, descriptions) # (n_tasks, emb_dim)
+    # task_embs = get_task_embs(cfg, descriptions) # (n_tasks, emb_dim)
+    # save task_embs to file instead of computing it every time
+    task_embs_dir = os.path.join('/home/kavin/Documents/GitProjects/CL/Lotus/bert', benchmark.name)
+    os.makedirs(task_embs_dir, exist_ok=True)  # 确保目录存在
+    task_embs_file = os.path.join(task_embs_dir, 'task_embs.pt')
+
+    if os.path.exists(task_embs_file):
+        print(f"[info] Loading task embeddings from {task_embs_file}")
+        task_embs = torch.load(task_embs_file)
+    else:
+        task_embs = get_task_embs(cfg, descriptions)  # (n_tasks, emb_dim)
+        torch.save(task_embs, task_embs_file)
+
     benchmark.set_task_embs(task_embs)
     task_names = benchmark.get_task_names()
 
-    modalities = cfg.skill_learning.repr.modalities    
-    modality_str = get_modalities_str(cfg.skill_learning)
+    modalities = cfg.skill_learning.repr.modalities     # ["agentview", "eye_in_hand", "proprio"]
+    modality_str = get_modalities_str(cfg.skill_learning)   # agentview_eye_in_hand_proprio_no_skip
     skill_learning_cfg = cfg.skill_learning
-    skill_exp_name = skill_learning_cfg.exp_name
-    exp_dir = f"skill_learning/results/{skill_exp_name}/skill_data"
-    data_file_name_list = []
-    subtasks_file_name_list = []
+    skill_exp_name = skill_learning_cfg.exp_name    # dinov2_libero_spatial_image_only
+    exp_dir = f"lotus/skill_learning/results/{skill_exp_name}/skill_data"
+    data_file_name_list = []    # [datasets/xxx_demo.hdf5, ] (6,)
+    subtasks_file_name_list = []    # [skill_learning/results/dinov2_libero_spatial_image_only/skill_data/libero_spatial/xxx_rbf.hdf5, ] (6,)
     used_data_file_name_list_skill = task_names #[]
     used_data_file_name_list_meta = task_names
     for dataset_category in os.listdir(exp_dir):
         dataset_category_path = os.path.join(exp_dir, dataset_category)
-        if os.path.isdir(dataset_category_path) and dataset_category in ['libero_object','libero_spactial','libero_goal', "libero_10", "libero_90", "rw_all"]:
+        if os.path.isdir(dataset_category_path) and dataset_category in ['libero_object','libero_spatial','libero_goal', "libero_10", "libero_90", "rw_all"]:
             for dataset_name in os.listdir(dataset_category_path):
-                dataset_name = dataset_name.split("_demo_")[0] + '_demo'
-                data_file_name_list.append(f"datasets/{dataset_category}/{dataset_name}.hdf5")
-                file_pattern = f"skill_learning/results/{skill_exp_name}/skill_data/{dataset_category}/{dataset_name}*"
+                dataset_name = dataset_name.split("_demo_")[0] + '_demo'    # 提取数据集名称的前缀，并添加`_demo`后缀
+                data_file_name_list.append(f"lotus/datasets/{dataset_category}/{dataset_name}.hdf5")
+                file_pattern = f"lotus/skill_learning/results/{skill_exp_name}/skill_data/{dataset_category}/{dataset_name}*"
                 matching_files = glob.glob(file_pattern)
                 assert len(matching_files)==1
                 subtasks_file_name_list.append(matching_files[0])
@@ -204,7 +216,7 @@ def main(hydra_cfg):
                                  new_task_name=new_task_name,
                                  demo_range=range(0, 50),
                                  used_data_file_name_list=used_data_file_name_list_skill)
-
+    print(f"[info ] Total {skill_dataset.num_subtasks} subtasks")   # 2
     gsz = cfg.data.task_group_size
 
     n_tasks = n_manip_tasks // gsz  # number of lifelong learning tasks
@@ -223,9 +235,9 @@ def main(hydra_cfg):
     create_experiment_dir(cfg, skill_exp_name=skill_exp_name, extra=cfg.exp+"_")
     cfg.shape_meta = shape_meta
 
-    if cfg.use_wandb:
-        wandb.init(project=cfg.wandb_project, config=cfg)
-        wandb.run.name = cfg.experiment_name
+    # if cfg.use_wandb:
+    #     wandb.init(project=cfg.wandb_project, config=cfg)
+    #     wandb.run.name = cfg.experiment_name
 
     result_summary = {
         "L_conf_mat": np.zeros((n_manip_tasks, n_manip_tasks)),  # loss confusion matrix
@@ -234,18 +246,18 @@ def main(hydra_cfg):
         "S_fwd": np.zeros((n_manip_tasks,)),  # success AUC, how fast the agent succeeds
     }
 
-    if cfg.eval.save_sim_states:
-        # for saving the evaluate simulation states, so we can replay them later
-        for k in range(n_manip_tasks):
-            for p in range(k + 1):  # for testing task p when the agent learns to task k
-                result_summary[f"k{k}_p{p}"] = [[] for _ in range(cfg.eval.n_eval)]
-            for e in range(
-                cfg.train.n_epochs + 1
-            ):  # for testing task k at the e-th epoch when the agent learns on task k
-                if e % cfg.eval.eval_every == 0:
-                    result_summary[f"k{k}_e{e//cfg.eval.eval_every}"] = [
-                        [] for _ in range(cfg.eval.n_eval)
-                    ]
+    # if cfg.eval.save_sim_states:
+    #     # for saving the evaluate simulation states, so we can replay them later
+    #     for k in range(n_manip_tasks):
+    #         for p in range(k + 1):  # for testing task p when the agent learns to task k
+    #             result_summary[f"k{k}_p{p}"] = [[] for _ in range(cfg.eval.n_eval)]
+    #         for e in range(
+    #             cfg.train.n_epochs + 1
+    #         ):  # for testing task k at the e-th epoch when the agent learns on task k
+    #             if e % cfg.eval.eval_every == 0:
+    #                 result_summary[f"k{k}_e{e//cfg.eval.eval_every}"] = [
+    #                     [] for _ in range(cfg.eval.n_eval)
+    #                 ]
 
     if cfg.lifelong.algo == "Multitask_Skill":
         # skill policy training
@@ -255,6 +267,7 @@ def main(hydra_cfg):
             print(f"Subtask id: {i}")
             sub_skill_policy = safe_device(SubSkill(n_tasks, cfg), cfg.device)
             if cfg.pretrain_model_path != "":
+                print(f"[info] load pretiain model from {cfg.pretrain_model_path}")
                 sub_skill_policy.load_skill(skill_id=i, experiment_dir=cfg.pretrain_model_path)
             # sub_skill_policy.eval()
             if dataset is None:
@@ -262,14 +275,14 @@ def main(hydra_cfg):
             else:
                 if i in skill_dataset.train_dataset_id:
                     sub_skill_policy.train()
-                    loss = sub_skill_policy.learn_one_skill(dataset, benchmark, result_summary, i, cfg.use_wandb)
+                    loss = sub_skill_policy.learn_one_skill(dataset, i, cfg.use_wandb)
             skill_policies[i] = sub_skill_policy.policy
             del sub_skill_policy
 
         # set eval mode for all skill policies
         for skill_policy in skill_policies.values():
             skill_policy.eval()
-        
+
         del skill_policy
         del skill_dataset
         del dataset
@@ -297,167 +310,167 @@ def main(hydra_cfg):
         meta_policy = safe_device(MetaController(n_tasks, cfg, skill_policies), cfg.device)
         meta_policy.train()
 
-        if cfg.pretrain_model_path != "":
-            meta_policy.load_meta_policy(experiment_dir=cfg.pretrain_model_path)
+        # if cfg.pretrain_model_path != "":
+        #     meta_policy.load_meta_policy(experiment_dir=cfg.pretrain_model_path)
 
-        s_fwd, l_fwd, kl_loss, ce_loss, embedding_loss = meta_policy.learn_multi_task(meta_dataset, benchmark, result_summary, cfg.use_wandb)
+        s_fwd, l_fwd, kl_loss, ce_loss, embedding_loss = meta_policy.learn_multi_task(meta_dataset, benchmark, cfg.use_wandb)
         result_summary["L_fwd"][-1] = l_fwd
         result_summary["S_fwd"][-1] = s_fwd
 
-        if cfg.use_wandb:
-            fig1, ax1 = plt.subplots()
-            bars1 = ax1.bar(np.arange(len(result_summary["S_fwd"])), result_summary["S_fwd"])
-            ax1.set_title('Forward Transfer Success')
+        # if cfg.use_wandb:
+        #     fig1, ax1 = plt.subplots()
+        #     bars1 = ax1.bar(np.arange(len(result_summary["S_fwd"])), result_summary["S_fwd"])
+        #     ax1.set_title('Forward Transfer Success')
+        #
+        #     for bar in bars1:
+        #         yval = bar.get_height()
+        #         ax1.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
+        #
+        #     fig2, ax2 = plt.subplots()
+        #     bars2 = ax2.bar(np.arange(len(result_summary["L_fwd"])), result_summary["L_fwd"])
+        #     ax2.set_title('Forward Transfer Loss')
+        #
+        #     for bar in bars2:
+        #         yval = bar.get_height()
+        #         ax2.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
+        #
+        #     wandb.log({
+        #         "Summary/fwd_transfer_success": wandb.Image(fig1),
+        #         "Summary/fwd_transfer_loss": wandb.Image(fig2),
+        #     })
+        #
+        #     plt.close(fig1)
+        #     plt.close(fig2)
+        #
+        #
+        # # evalute on all seen tasks at the end if eval.eval is true
+        # if cfg.eval.eval:
+        #     # L = evaluate_loss(cfg, meta_policy, benchmark, datasets)
+        #     S = evaluate_success(
+        #         cfg=cfg,
+        #         algo=meta_policy,
+        #         benchmark=benchmark,
+        #         task_ids=list(range(n_manip_tasks)),
+        #         result_summary=result_summary if cfg.eval.save_sim_states else None,
+        #     )
+        #
+        #     # result_summary["L_conf_mat"][-1] = L
+        #     result_summary["S_conf_mat"][-1] = S
+        #
+        #     if cfg.use_wandb:
+        #         fig1, ax1 = plt.subplots()
+        #         cax1 = ax1.matshow(result_summary["S_conf_mat"], cmap=plt.cm.Blues)
+        #         fig1.colorbar(cax1)
+        #         ax1.set_title('Success Confusion Matrix')
+        #
+        #         for j in range(result_summary["S_conf_mat"].shape[0]):
+        #             for k in range(result_summary["S_conf_mat"].shape[1]):
+        #                 c = result_summary["S_conf_mat"][j,k]
+        #                 ax1.text(k, j, str(c), va='center', ha='center')
+        #
+        #         wandb.log({
+        #             "Summary/success_confusion_matrix": wandb.Image(fig1),
+        #             # "Summary/loss_confusion_matrix": wandb.Image(fig2),
+        #             # f"Summary/all_task_losses": wandb.Histogram(L, num_bins=len(L)),
+        #             f"Summary/all_task_success_rates": wandb.Histogram(S, num_bins=len(S)),
+        #         })
+        #
+        #         plt.close(fig1)
+        #         # plt.close(fig2)
+        #
+        #         wandb.run.summary["success_confusion_matrix"] = result_summary[
+        #             "S_conf_mat"
+        #         ]
+        #         # wandb.run.summary["loss_confusion_matrix"] = result_summary[
+        #         #     "L_conf_mat"
+        #         # ]
+        #         wandb.run.summary["fwd_transfer_success"] = result_summary["S_fwd"]
+        #         # wandb.run.summary["fwd_transfer_loss"] = result_summary["L_fwd"]
+        #         # wandb.run.summary.update() # this is not needed in training
+        #
+        #
+        #     # print(("[All task loss ] " + " %4.2f |" * n_tasks) % tuple(L))
+        #     print(("[All task succ.] " + " %4.2f |" * n_tasks) % tuple(S))
+        #
+        #     torch.save(result_summary, os.path.join(cfg.experiment_dir, f"result.pt"))
 
-            for bar in bars1:
-                yval = bar.get_height()
-                ax1.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
-
-            fig2, ax2 = plt.subplots()
-            bars2 = ax2.bar(np.arange(len(result_summary["L_fwd"])), result_summary["L_fwd"])
-            ax2.set_title('Forward Transfer Loss')
-
-            for bar in bars2:
-                yval = bar.get_height()
-                ax2.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
-
-            wandb.log({
-                "Summary/fwd_transfer_success": wandb.Image(fig1),
-                "Summary/fwd_transfer_loss": wandb.Image(fig2),
-            })
-
-            plt.close(fig1)
-            plt.close(fig2)
-
-
-        # evalute on all seen tasks at the end if eval.eval is true
-        if cfg.eval.eval:
-            # L = evaluate_loss(cfg, meta_policy, benchmark, datasets)
-            S = evaluate_success(
-                cfg=cfg,
-                algo=meta_policy,
-                benchmark=benchmark,
-                task_ids=list(range(n_manip_tasks)),
-                result_summary=result_summary if cfg.eval.save_sim_states else None,
-            )
-
-            # result_summary["L_conf_mat"][-1] = L
-            result_summary["S_conf_mat"][-1] = S
-
-            if cfg.use_wandb:
-                fig1, ax1 = plt.subplots()
-                cax1 = ax1.matshow(result_summary["S_conf_mat"], cmap=plt.cm.Blues)
-                fig1.colorbar(cax1)
-                ax1.set_title('Success Confusion Matrix')
-
-                for j in range(result_summary["S_conf_mat"].shape[0]):
-                    for k in range(result_summary["S_conf_mat"].shape[1]):
-                        c = result_summary["S_conf_mat"][j,k]
-                        ax1.text(k, j, str(c), va='center', ha='center')
-
-                wandb.log({
-                    "Summary/success_confusion_matrix": wandb.Image(fig1),
-                    # "Summary/loss_confusion_matrix": wandb.Image(fig2),
-                    # f"Summary/all_task_losses": wandb.Histogram(L, num_bins=len(L)),
-                    f"Summary/all_task_success_rates": wandb.Histogram(S, num_bins=len(S)),
-                })
-
-                plt.close(fig1)
-                # plt.close(fig2)
-
-                wandb.run.summary["success_confusion_matrix"] = result_summary[
-                    "S_conf_mat"
-                ]
-                # wandb.run.summary["loss_confusion_matrix"] = result_summary[
-                #     "L_conf_mat"
-                # ]
-                wandb.run.summary["fwd_transfer_success"] = result_summary["S_fwd"]
-                # wandb.run.summary["fwd_transfer_loss"] = result_summary["L_fwd"]
-                # wandb.run.summary.update() # this is not needed in training
-
-
-            # print(("[All task loss ] " + " %4.2f |" * n_tasks) % tuple(L))
-            print(("[All task succ.] " + " %4.2f |" * n_tasks) % tuple(S))
-
-            torch.save(result_summary, os.path.join(cfg.experiment_dir, f"result.pt"))
-    
-    elif cfg.lifelong.algo == "Singletask_Skill":
-        for i in range(n_tasks):
-            print(f"[info] start training on task {i}")
-            t0 = time.time()
-            benchmark_name = benchmark.name
-            task_description = benchmark.get_task(i).language
-            print(f"Task description: {benchmark_name} - {task_description}")
-
-            # skill policy training
-            skill_policies = {}
-            for j in range(skill_dataset.num_subtasks):
-                dataset = skill_dataset.get_dataset(idx=j)
-                if dataset is None:
-                    continue
-                print(f"Subtask id: {dataset.subtask_id}")
-                sub_skill_policy = safe_device(SubSkill(n_tasks, cfg), cfg.device)
-                sub_skill_policy.train()
-                loss = sub_skill_policy.learn_one_skill(dataset, benchmark, result_summary, j, cfg.use_wandb)
-                skill_policies[j] = sub_skill_policy.policy
-
-            del skill_dataset
-            del dataset
-
-            # save the subgoal embedding
-            save_subgoal_embedding(cfg, skill_policies, data_file_name_list, skill_learning_cfg, skill_exp_name)
-            # del skill_policies
-            del sub_skill_policy
-
-            # meta policy training
-
-            meta_dataset = MetaPolicyDataset(data_file_name_list=data_file_name_list,
-                                            embedding_file_name=os.path.join(cfg.experiment_dir, f"subgoal_embedding.hdf5"),
-                                            subtasks_file_name_list=subtasks_file_name_list,
-                                            use_eye_in_hand=skill_learning_cfg.meta.use_eye_in_hand)
-
-            cfg.skill_learning.num_subtasks = meta_dataset.num_subtasks
-            cfg.skill_learning.subgoal_embedding_dim = meta_dataset.subgoal_embedding_dim
-            meta_policy = safe_device(MetaController(n_tasks, cfg, skill_policies), cfg.device)
-            meta_policy.train()
-
-            s_fwd, l_fwd, kl_loss, ce_loss, embedding_loss = meta_policy.learn_one_task(meta_dataset, i, benchmark, result_summary, cfg.use_wandb)
-            result_summary["S_fwd"][i] = s_fwd
-            result_summary["L_fwd"][i] = l_fwd
-            t1 = time.time()
-
-            if cfg.use_wandb:
-                fig1, ax1 = plt.subplots()
-                bars1 = ax1.bar(np.arange(len(result_summary["S_fwd"])), result_summary["S_fwd"])
-                ax1.set_title('Forward Transfer Success')
-
-                for bar in bars1:
-                    yval = bar.get_height()
-                    ax1.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
-
-                fig2, ax2 = plt.subplots()
-                bars2 = ax2.bar(np.arange(len(result_summary["L_fwd"])), result_summary["L_fwd"])
-                ax2.set_title('Forward Transfer Loss')
-
-                for bar in bars2:
-                    yval = bar.get_height()
-                    ax2.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
-                wandb.log({
-                    "Summary/fwd_transfer_success": wandb.Image(fig1),
-                    "Summary/fwd_transfer_loss": wandb.Image(fig2),
-                    "Summary/task_step": i,
-                    "Summary/train_time": (t1-t0)/60,
-                })
-
-                plt.close(fig1)
-                plt.close(fig2)
-            break
-    else:
-        raise NotImplementedError
+    # elif cfg.lifelong.algo == "Singletask_Skill":
+    #     for i in range(n_tasks):
+    #         print(f"[info] start training on task {i}")
+    #         t0 = time.time()
+    #         benchmark_name = benchmark.name
+    #         task_description = benchmark.get_task(i).language
+    #         print(f"Task description: {benchmark_name} - {task_description}")
+    #
+    #         # skill policy training
+    #         skill_policies = {}
+    #         for j in range(skill_dataset.num_subtasks):
+    #             dataset = skill_dataset.get_dataset(idx=j)
+    #             if dataset is None:
+    #                 continue
+    #             print(f"Subtask id: {dataset.subtask_id}")
+    #             sub_skill_policy = safe_device(SubSkill(n_tasks, cfg), cfg.device)
+    #             sub_skill_policy.train()
+    #             loss = sub_skill_policy.learn_one_skill(dataset, benchmark, result_summary, j, cfg.use_wandb)
+    #             skill_policies[j] = sub_skill_policy.policy
+    #
+    #         del skill_dataset
+    #         del dataset
+    #
+    #         # save the subgoal embedding
+    #         save_subgoal_embedding(cfg, skill_policies, data_file_name_list, skill_learning_cfg, skill_exp_name)
+    #         # del skill_policies
+    #         del sub_skill_policy
+    #
+    #         # meta policy training
+    #
+    #         meta_dataset = MetaPolicyDataset(data_file_name_list=data_file_name_list,
+    #                                         embedding_file_name=os.path.join(cfg.experiment_dir, f"subgoal_embedding.hdf5"),
+    #                                         subtasks_file_name_list=subtasks_file_name_list,
+    #                                         use_eye_in_hand=skill_learning_cfg.meta.use_eye_in_hand)
+    #
+    #         cfg.skill_learning.num_subtasks = meta_dataset.num_subtasks
+    #         cfg.skill_learning.subgoal_embedding_dim = meta_dataset.subgoal_embedding_dim
+    #         meta_policy = safe_device(MetaController(n_tasks, cfg, skill_policies), cfg.device)
+    #         meta_policy.train()
+    #
+    #         s_fwd, l_fwd, kl_loss, ce_loss, embedding_loss = meta_policy.learn_one_task(meta_dataset, i, benchmark, result_summary, cfg.use_wandb)
+    #         result_summary["S_fwd"][i] = s_fwd
+    #         result_summary["L_fwd"][i] = l_fwd
+    #         t1 = time.time()
+    #
+    #         if cfg.use_wandb:
+    #             fig1, ax1 = plt.subplots()
+    #             bars1 = ax1.bar(np.arange(len(result_summary["S_fwd"])), result_summary["S_fwd"])
+    #             ax1.set_title('Forward Transfer Success')
+    #
+    #             for bar in bars1:
+    #                 yval = bar.get_height()
+    #                 ax1.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
+    #
+    #             fig2, ax2 = plt.subplots()
+    #             bars2 = ax2.bar(np.arange(len(result_summary["L_fwd"])), result_summary["L_fwd"])
+    #             ax2.set_title('Forward Transfer Loss')
+    #
+    #             for bar in bars2:
+    #                 yval = bar.get_height()
+    #                 ax2.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
+    #             wandb.log({
+    #                 "Summary/fwd_transfer_success": wandb.Image(fig1),
+    #                 "Summary/fwd_transfer_loss": wandb.Image(fig2),
+    #                 "Summary/task_step": i,
+    #                 "Summary/train_time": (t1-t0)/60,
+    #             })
+    #
+    #             plt.close(fig1)
+    #             plt.close(fig2)
+    #         break
+    # else:
+    #     raise NotImplementedError
 
     print("[info] finished learning\n")
-    if cfg.use_wandb:
-        wandb.finish()
+    # if cfg.use_wandb:
+    #     wandb.finish()
 
 
 if __name__ == "__main__":

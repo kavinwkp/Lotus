@@ -1,4 +1,4 @@
-footprint: mean
+footprint: global_pooling
 dist: l2
 segment_footprint: concat_1
 affinity: rbf
