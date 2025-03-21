@@ -170,7 +170,7 @@ def main(hydra_cfg):
 
     # task_embs = get_task_embs(cfg, descriptions) # (n_tasks, emb_dim)
     # save task_embs to file instead of computing it every time
-    task_embs_dir = os.path.join('/home/kavin/Documents/GitProjects/CL/Lotus/bert', benchmark.name)
+    task_embs_dir = os.path.join('bert', benchmark.name)
     os.makedirs(task_embs_dir, exist_ok=True)  # 确保目录存在
     task_embs_file = os.path.join(task_embs_dir, 'task_embs.pt')
 
