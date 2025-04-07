@@ -159,6 +159,7 @@ class SinusoidalPositionEncoding(nn.Module):
 ###############################################################################
 
 
+
 class TransformerDecoder(nn.Module):
     def __init__(
         self,
@@ -234,6 +235,187 @@ class TransformerDecoder(nn.Module):
                 self.attention_output[layer_idx] = att.att_weights
             x = x + self.drop_path(ff(ff_norm(x)))
         return x
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
+
+
+class Expert(nn.Module):
+    def __init__(self, in_features):
+        super().__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(in_features, 4 * in_features),
+            nn.ReLU(),
+            nn.Linear(4 * in_features, in_features),
+            nn.Dropout(0.1)
+        )
+
+        # self.fc = nn.Sequential(
+        #     nn.Linear(in_features, 4 * in_features),
+        #     nn.GELU(),
+        #     nn.Dropout(0.1),
+        #     nn.Linear(4 * in_features, in_features),
+        #     nn.Dropout(0.1),
+        # )
+
+    def forward(self, x):
+        return self.fc(x)
+
+class SparseMoE2(nn.Module):
+
+    def __init__(self, in_features, num_experts, top_k):
+        super().__init__()
+        self.num_experts = num_experts
+        self.top_k = top_k
+
+        self.gate = nn.Linear(in_features, num_experts)
+        self.noise_linear = nn.Linear(in_features, num_experts)
+
+        self.experts = nn.ModuleList([Expert(in_features) for _ in range(self.num_experts)])
+        self.shared_expert = Expert(in_features)
+
+        self.experts_counts = torch.zeros(num_experts, dtype=torch.long)
+
+    def forward(self, hidden_states):
+        batch_size, seq_len, hidden_dim = hidden_states.shape
+
+        router_logits = self.gate(hidden_states)    # (bs, seq, num_expert)
+        # noise_logits = self.noise_linear(hidden_states)
+        #
+        # # Adding scaled unit gaussian noise to the logits
+        # noise = torch.randn_like(router_logits) * F.softplus(noise_logits)
+        # router_logits = router_logits + noise
+
+        hidden_states = hidden_states.view(-1, hidden_dim)  # bs*seq, hidden_dim
+        routing_weights = F.softmax(router_logits, dim=-1)  # (bs, seq, num_expert)
+        routing_weights = routing_weights.view(-1, self.num_experts)     # (bs*seq, num_expert)
+
+        # 计算每个专家的概率
+        prob_per_expert = routing_weights.mean(dim=0)  # P_i
+
+        # select top2 experts
+        routing_weights, selected_experts = torch.topk(routing_weights, self.top_k, dim=-1)     # (bs*seq, 2)
+
+        # calculate experts used num
+        flattened = selected_experts.flatten()
+        expert_count = torch.bincount(flattened, minlength=self.num_experts)
+        self.experts_counts += expert_count.cpu()
+
+        # fusing weight && add
+        routing_weights = routing_weights / torch.sum(routing_weights, dim=-1, keepdim=True).to(hidden_states.dtype)
+        #  init maxtrix to save result
+        final_hidden_states = torch.zeros(
+            (batch_size * seq_len, hidden_dim), dtype=hidden_states.dtype, device=hidden_states.device
+        )
+        # for efficiency, calculate the result one time using the mask
+        expert_mask = nn.functional.one_hot(selected_experts, num_classes=self.num_experts)     # (bs*seq, 2, num_expert)
+
+        tokens_per_expert = expert_mask.sum(dim=(0, 1)).float()
+        tokens_per_expert = tokens_per_expert / (routing_weights.size(0) * self.top_k)  # f_i
+
+        # [20,2,8] ---> [8,2,20]
+        expert_mask = expert_mask.permute(2, 1, 0)  # (num_expert, 2, bs*seq)
+        for expert_index in range(self.num_experts):
+            expert_layer = self.experts[expert_index]
+            idx, top_x = torch.where(expert_mask[expert_index])     # (3,)
+            top_x_list = top_x.tolist()
+            idx_list = idx.tolist()
+            current_state = hidden_states[None, top_x_list].reshape(-1, hidden_dim)     # (3, hidden_dim)
+            current_hidden_states = expert_layer(current_state) * routing_weights[top_x_list, idx_list, None]   # (3, hidden_dim)
+            current_hidden_states = current_hidden_states.to(hidden_states.dtype)
+
+            final_hidden_states.index_add_(0, top_x, current_hidden_states)
+
+        final_hidden_states += self.shared_expert(hidden_states)
+
+        final_hidden_states = final_hidden_states.reshape(batch_size, seq_len, hidden_dim)
+
+
+        # 计算负载均衡损失
+        load_balance_loss = self.num_experts * torch.sum(prob_per_expert * tokens_per_expert)
+
+        return final_hidden_states, load_balance_loss
+
+class MoeTransformerDecoder(nn.Module):
+    def __init__(
+        self,
+        input_size,
+        num_layers,
+        num_heads,
+        head_output_size,
+        num_experts,
+        top_k,
+        dropout,
+    ):
+        super().__init__()
+
+        self.layers = nn.ModuleList([])
+        self.drop_path = DropPath(dropout) if dropout > 0.0 else nn.Identity()
+
+        self.attention_output = {}
+
+        for _ in range(num_layers):
+            self.layers.append(
+                nn.ModuleList(
+                    [
+                        Norm(input_size),
+                        Attention(
+                            input_size,
+                            num_heads=num_heads,
+                            head_output_size=head_output_size,
+                            dropout=dropout,
+                        ),
+                        Norm(input_size),
+                        SparseMoE2(input_size, num_experts=num_experts, top_k=top_k),
+                        # MoE(input_size, num_experts=num_experts, top_k=top_k),
+                    ]
+                )
+            )
+
+            self.attention_output[_] = None
+        self.seq_len = None
+        self.num_elements = None
+        self.mask = None
+
+    def compute_mask(self, input_shape):
+        # input_shape = (:, seq_len, num_elements)
+        if (
+            (self.num_elements is None)
+            or (self.seq_len is None)
+            or (self.num_elements != input_shape[2])
+            or (self.seq_len != input_shape[1])
+        ):
+
+            self.seq_len = input_shape[1]
+            self.num_elements = input_shape[2]
+            self.original_mask = (
+                torch.triu(torch.ones(self.seq_len, self.seq_len))
+                - torch.eye(self.seq_len, self.seq_len)
+            ).to(self.device)
+            self.mask = 1 - self.original_mask.repeat_interleave(
+                self.num_elements, dim=-1
+            ).repeat_interleave(self.num_elements, dim=-2).unsqueeze(0)
+            # (1, N, N), N = seq_len * num_elements
+
+    def forward(self, x, mask=None):
+        aux_losses = 0.0
+        for layer_idx, (att_norm, att, ff_norm, moe) in enumerate(self.layers):
+            if mask is not None:
+                x = x + drop_path(att(att_norm(x), mask))
+            elif self.mask is not None:
+                x = x + drop_path(att(att_norm(x), self.mask))
+            else:  # no masking, just use full attention
+                x = x + drop_path(att(att_norm(x)))
+
+            if not self.training:
+                self.attention_output[layer_idx] = att.att_weights
+
+            out, loss = moe(ff_norm(x))
+            x = x + self.drop_path(out)
+            aux_losses += loss
+        aux_losses /= len(self.layers)
+        return x, aux_losses
 
     @property
     def device(self):

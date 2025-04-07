@@ -222,7 +222,7 @@ class BCTransformerPolicy(BasePolicy):
         policy_cfg.language_encoder.network_kwargs.output_size = embed_size
         self.language_encoder = eval(policy_cfg.language_encoder.network)(
             **policy_cfg.language_encoder.network_kwargs
-        )
+        )   # MLPEncoder (768->64)
 
         ### 3. encode extra information (e.g. gripper, joint_state)
         self.extra_encoder = ExtraModalityTokens(
@@ -238,7 +238,7 @@ class BCTransformerPolicy(BasePolicy):
         policy_cfg.temporal_position_encoding.network_kwargs.input_size = embed_size
         self.temporal_position_encoding_fn = eval(
             policy_cfg.temporal_position_encoding.network
-        )(**policy_cfg.temporal_position_encoding.network_kwargs)
+        )(**policy_cfg.temporal_position_encoding.network_kwargs)   # SinusoidalPositionEncoding
 
         self.temporal_transformer = TransformerDecoder(
             input_size=embed_size,
@@ -256,7 +256,7 @@ class BCTransformerPolicy(BasePolicy):
         self.policy_head = eval(policy_cfg.policy_head.network)(
             **policy_cfg.policy_head.loss_kwargs,
             **policy_cfg.policy_head.network_kwargs
-        )
+        )   # GMMHead (64->7)
 
         self.latent_queue = []
         self.max_seq_len = policy_cfg.transformer_max_seq_len
@@ -278,7 +278,7 @@ class BCTransformerPolicy(BasePolicy):
 
         # 2. encode language, treat it as action token
         B, T = extra.shape[:2]
-        text_encoded = self.language_encoder(data)  # (B, E)
+        text_encoded = self.language_encoder(data)  # (B, E)    768->64
         text_encoded = text_encoded.view(B, 1, 1, -1).expand(
             -1, T, -1, -1
         )  # (B, T, 1, E)
@@ -309,12 +309,16 @@ class BCTransformerPolicy(BasePolicy):
         self.eval()
         with torch.no_grad():
             data = self.preprocess_input(data, train_mode=False)
+            # print(data["obs"]["agentview_rgb"].shape)   # (20, 1, 3, 128, 128)
             x = self.spatial_encode(data)
+            # print(x.shape)  # (20, 1, 5, 64)
             self.latent_queue.append(x)
             if len(self.latent_queue) > self.max_seq_len:
                 self.latent_queue.pop(0)
             x = torch.cat(self.latent_queue, dim=1)  # (B, T, H_all)
+            # print(x.shape)  # (20, 1, 5, 64) -> (20, 10, 5, 64)
             x = self.temporal_encode(x)
+            # print(x.shape)  # (20, 1, 64) -> (20, 10, 64)
             dist = self.policy_head(x[:, -1])
         action = dist.sample().detach().cpu()
         return action.view(action.shape[0], -1).numpy()
@@ -512,3 +516,166 @@ class BCTransformerSkillPolicy(BasePolicy):
             langs=None
         )
         return embedding
+
+class BCTransformerMoEPolicy(BasePolicy):
+    """
+    Input: (o_{t-H}, ... , o_t) H=10
+    Output: a_t or distribution of a_t
+    """
+
+    def __init__(self, cfg, shape_meta):
+        super().__init__(cfg, shape_meta)
+        policy_cfg = cfg.policy
+
+        ### 1. encode image
+        embed_size = policy_cfg.embed_size  # 64
+        transformer_input_sizes = []
+        self.image_encoders = {}
+        for name in shape_meta["all_shapes"].keys():    # {"agentview_rgb", "eye_in_hand_rgb", "gripper_states", "joint_states"}
+            if "rgb" in name or "depth" in name:        # {"agentview_rgb", "eye_in_hand_rgb"}
+                kwargs = policy_cfg.image_encoder.network_kwargs    # {"pretrained": false, "freeze": false, "remove_layer_num": 4, "no_stride": false, "language_fusion": "film"}
+                kwargs.input_shape = shape_meta["all_shapes"][name] # (3,128,128)
+                kwargs.output_size = embed_size
+                kwargs.language_dim = (
+                    policy_cfg.language_encoder.network_kwargs.input_size   # 768
+                )
+                self.image_encoders[name] = {
+                    "input_shape": shape_meta["all_shapes"][name],
+                    "encoder": eval(policy_cfg.image_encoder.network)(**kwargs),    # "ResnetEncoder"
+                }
+
+        self.encoders = nn.ModuleList(
+            [x["encoder"] for x in self.image_encoders.values()]
+        )
+
+        ### 2. encode language
+        policy_cfg.language_encoder.network_kwargs.output_size = embed_size
+        self.language_encoder = eval(policy_cfg.language_encoder.network)(
+            **policy_cfg.language_encoder.network_kwargs
+        )   # MLPEncoder (768->64)
+
+        ### 3. encode extra information (e.g. gripper, joint_state)
+        self.extra_encoder = ExtraModalityTokens(
+            use_joint=cfg.data.use_joint,       # true
+            use_gripper=cfg.data.use_gripper,   # true
+            use_ee=cfg.data.use_ee,             # false
+            extra_num_layers=policy_cfg.extra_num_layers,   # 0
+            extra_hidden_size=policy_cfg.extra_hidden_size, # 0
+            extra_embedding_size=embed_size,
+        )
+
+        ### 4. define temporal transformer
+        policy_cfg.temporal_position_encoding.network_kwargs.input_size = embed_size
+        self.temporal_position_encoding_fn = eval(
+            policy_cfg.temporal_position_encoding.network
+        )(**policy_cfg.temporal_position_encoding.network_kwargs)   # SinusoidalPositionEncoding
+
+        # self.temporal_transformer = TransformerDecoder(
+        #     input_size=embed_size,
+        #     num_layers=policy_cfg.transformer_num_layers,
+        #     num_heads=policy_cfg.transformer_num_heads,
+        #     head_output_size=policy_cfg.transformer_head_output_size,
+        #     mlp_hidden_size=policy_cfg.transformer_mlp_hidden_size,
+        #     dropout=policy_cfg.transformer_dropout,
+        # )
+
+        ## TODO: replace to Moe transformer
+        self.temporal_transformer = MoeTransformerDecoder(
+            input_size=embed_size,
+            num_layers=policy_cfg.transformer_num_layers,
+            num_heads=policy_cfg.transformer_num_heads,
+            head_output_size=policy_cfg.transformer_head_output_size,
+            num_experts=policy_cfg.num_experts,
+            top_k=policy_cfg.top_k,
+            dropout=policy_cfg.transformer_dropout,
+        )
+
+        policy_head_kwargs = policy_cfg.policy_head.network_kwargs
+        policy_head_kwargs.input_size = embed_size
+        policy_head_kwargs.output_size = shape_meta["ac_dim"]
+
+        self.policy_head = eval(policy_cfg.policy_head.network)(
+            **policy_cfg.policy_head.loss_kwargs,
+            **policy_cfg.policy_head.network_kwargs
+        )   # GMMHead (64->7)
+
+        # self.policy_head = nn.Linear(embed_size, shape_meta["ac_dim"])
+
+        self.latent_queue = []
+        self.max_seq_len = policy_cfg.transformer_max_seq_len   # 10
+
+    def temporal_encode(self, x):
+        pos_emb = self.temporal_position_encoding_fn(x)     # (1, 64)
+        x = x + pos_emb.unsqueeze(1)  # (B, T, num_modality, E)
+        sh = x.shape
+        self.temporal_transformer.compute_mask(x.shape)
+
+        x = TensorUtils.join_dimensions(x, 1, 2)  # (B, T*num_modality, E)
+        x, aux_loss = self.temporal_transformer(x)
+        x = x.reshape(*sh)
+        if self.training:
+            return x[:, :, 0], aux_loss  # (B, T, E)
+        else:
+            return x[:, :, 0]
+
+    def spatial_encode(self, data):
+        # 1. encode extra
+        extra = self.extra_encoder(data["obs"])  # (B, T, num_extra, E)
+
+        # 2. encode language, treat it as action token
+        B, T = extra.shape[:2]
+        text_encoded = self.language_encoder(data)  # (B, E)    768->64
+        text_encoded = text_encoded.view(B, 1, 1, -1).expand(
+            -1, T, -1, -1
+        )  # (B, T, 1, E)
+        encoded = [text_encoded, extra]
+
+        # 3. encode image
+        for img_name in self.image_encoders.keys():
+            x = data["obs"][img_name]
+            B, T, C, H, W = x.shape     # (20, T, 3, 128, 128)
+            img_encoded = self.image_encoders[img_name]["encoder"](
+                x.reshape(B * T, C, H, W),
+                langs=data["task_emb"]
+                .reshape(B, 1, -1)
+                .repeat(1, T, 1)
+                .reshape(B * T, -1),
+            ).view(B, T, 1, -1)
+            encoded.append(img_encoded)
+        encoded = torch.cat(encoded, -2)  # (B, T, num_modalities, E)
+        return encoded
+
+    def forward(self, data):
+        x = self.spatial_encode(data)
+        x, aux_loss = self.temporal_encode(x)
+        dist = self.policy_head(x)
+        if self.training:
+            return dist, aux_loss
+        else:
+            return dist
+
+    def get_action(self, data):
+        self.eval()
+        with torch.no_grad():
+            # print(data["obs"]["agentview_rgb"].shape)   # train policy: (20, 3, 128, 128) , train meta: (20, 1, 3, 128, 128) no need to squeeze(1)
+            if data["obs"]["agentview_rgb"].shape[1] != 1:
+                data = self.preprocess_input(data, train_mode=False)
+            # print(data["obs"]["agentview_rgb"].shape)     # (20, 1, 3, 128, 128)
+            x = self.spatial_encode(data)   # (20, 1, 5, 64)
+            self.latent_queue.append(x)
+            if len(self.latent_queue) > self.max_seq_len:
+                self.latent_queue.pop(0)
+            x = torch.cat(self.latent_queue, dim=1)  # (B, T, H_all)    (20, 10, 5, 64)
+            x = self.temporal_encode(x)     # (20, 10, 64)
+            dist = self.policy_head(x[:, -1])   # (20, 64) -> (20, 7)
+        action = dist.sample().detach().cpu()   # (20, 7)
+        return action.view(action.shape[0], -1).numpy()
+
+    def reset(self):
+        self.latent_queue = []
+
+    def compute_loss(self, data, reduction="mean"):
+        data = self.preprocess_input(data, train_mode=True)
+        dist, aux_loss = self.forward(data)
+        loss = self.policy_head.loss_fn(dist, data["actions"], reduction)
+        return loss, aux_loss
