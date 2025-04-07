@@ -95,9 +95,9 @@ def parse_args():
         choices=["bc_rnn_policy", "bc_transformer_policy", "bc_vilt_policy"],
     )
     parser.add_argument("--seed", type=int, required=True)
-    parser.add_argument("--ep", type=int)
-    parser.add_argument("--load_task", type=int)
-    parser.add_argument("--device_id", type=int)
+    parser.add_argument("--ep", type=int, help="epoch number of which .pth")
+    parser.add_argument("--load_task", type=int, help="for single task")
+    parser.add_argument("--device_id", type=int, default=0)
     parser.add_argument("--save-videos", action="store_true")
     # parser.add_argument('--save_dir',  type=str, required=True)
     args = parser.parse_args()
@@ -131,7 +131,7 @@ def main():
     #     + f"{algo_map[args.algo]}/"
     #     + f"{policy_map[args.policy]}_seed{args.seed}",
     # )
-    experiment_dir = args.experiment_dir
+    # experiment_dir = args.experiment_dir
 
     # find the checkpoint
     # experiment_id = 0
@@ -150,18 +150,14 @@ def main():
     #     sys.exit(0)
 
     # run_folder = os.path.join(experiment_dir, f"run_{experiment_id:03d}")
-    run_folder = experiment_dir
+    run_folder = args.experiment_dir
     try:
         if args.algo == "multitask":
             model_path = os.path.join(run_folder, f"multitask_model_ep{args.ep}.pth")
-            sd, cfg, previous_mask = torch_load_model(
-                model_path, map_location=args.device_id
-            )
+            sd, cfg, previous_mask = torch_load_model(model_path, map_location=args.device_id)
         else:
             model_path = os.path.join(run_folder, f"task{args.load_task}_model.pth")
-            sd, cfg, previous_mask = torch_load_model(
-                model_path, map_location=args.device_id
-            )
+            sd, cfg, previous_mask = torch_load_model(model_path, map_location=args.device_id)
     except:
         print(f"[error] cannot find the checkpoint at {str(model_path)}")
         sys.exit(0)
@@ -174,17 +170,17 @@ def main():
     algo = safe_device(eval(algo_map[args.algo])(10, cfg), cfg.device)
     algo.policy.previous_mask = previous_mask
 
-    if cfg.lifelong.algo == "PackNet":
-        algo.eval()
-        for module_idx, module in enumerate(algo.policy.modules()):
-            if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
-                weight = module.weight.data
-                mask = algo.previous_masks[module_idx].to(cfg.device)
-                weight[mask.eq(0)] = 0.0
-                weight[mask.gt(args.task_id + 1)] = 0.0
-                # we never train norm layers
-            if "BatchNorm" in str(type(module)) or "LayerNorm" in str(type(module)):
-                module.eval()
+    # if cfg.lifelong.algo == "PackNet":
+    #     algo.eval()
+    #     for module_idx, module in enumerate(algo.policy.modules()):
+    #         if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+    #             weight = module.weight.data
+    #             mask = algo.previous_masks[module_idx].to(cfg.device)
+    #             weight[mask.eq(0)] = 0.0
+    #             weight[mask.gt(args.task_id + 1)] = 0.0
+    #             # we never train norm layers
+    #         if "BatchNorm" in str(type(module)) or "LayerNorm" in str(type(module)):
+    #             module.eval()
 
     algo.policy.load_state_dict(sd)
 
@@ -195,7 +191,17 @@ def main():
     benchmark = get_benchmark(cfg.benchmark_name)(cfg.data.task_order_index)
     descriptions = [benchmark.get_task(i).language for i in range(benchmark.n_tasks)]
 
-    task_embs = get_task_embs(cfg, descriptions)
+    # task_embs = get_task_embs(cfg, descriptions)
+    task_embs_dir = os.path.join('bert', benchmark.name)
+    os.makedirs(task_embs_dir, exist_ok=True)
+    task_embs_file = os.path.join(task_embs_dir, 'task_embs.pt')
+
+    if os.path.exists(task_embs_file):
+        print(f"[info] Loading task embeddings from {task_embs_file}")
+        task_embs = torch.load(task_embs_file)
+    else:
+        task_embs = get_task_embs(cfg, descriptions)  # (n_tasks, emb_dim)
+        torch.save(task_embs, task_embs_file)
     benchmark.set_task_embs(task_embs)
 
     task = benchmark.get_task(args.task_id)
@@ -226,21 +232,23 @@ def main():
     test_loss = 0.0
 
     # 2. evaluate success rate
+    video_folder = os.path.join(
+        args.save_dir,
+        f"{args.benchmark}_{args.algo}_{args.policy}_{args.seed}_on_task{args.task_id}_videos",
+    )
+
     if args.algo == "multitask":
         save_folder = os.path.join(
-            args.save_dir,
+            video_folder,
             f"{args.benchmark}_{args.algo}_{args.policy}_{args.seed}_ep{args.ep}_on{args.task_id}.stats",
         )
     else:
         save_folder = os.path.join(
-            args.save_dir,
+            video_folder,
             f"{args.benchmark}_{args.algo}_{args.policy}_{args.seed}_load{args.load_task}_on{args.task_id}.stats",
         )
 
-    video_folder = os.path.join(
-        args.save_dir,
-        f"{args.benchmark}_{args.algo}_{args.policy}_{args.seed}_load{args.load_task}_on{args.task_id}_videos",
-    )
+
 
     with Timer() as t, VideoWriter(video_folder, args.save_videos) as video_writer:
         env_args = {
@@ -303,11 +311,14 @@ def main():
             "success_rate": success_rate,
         }
 
-        os.system(f"mkdir -p {args.save_dir}")
-        torch.save(eval_stats, save_folder)
-    print(
-        f"[info] finish for ckpt at {run_folder} in {t.get_elapsed_time()} sec for rollouts"
-    )
+        # os.system(f"mkdir -p {args.save_dir}")
+        # torch.save(eval_stats, save_folder)
+
+        os.makedirs(video_folder, exist_ok=True)
+        with open(save_folder, "w") as f:
+            json.dump(eval_stats, f, cls=NpEncoder, indent=4)
+
+    print(f"[info] finish for ckpt at {run_folder} in {t.get_elapsed_time()} sec for rollouts")
     print(f"Results are saved at {save_folder}")
     print(test_loss, success_rate)
 

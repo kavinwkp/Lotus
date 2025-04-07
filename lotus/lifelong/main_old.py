@@ -395,7 +395,7 @@ def main(hydra_cfg):
     #                 result_summary, os.path.join(cfg.experiment_dir, f"result.pt")
     #             )
     #
-    # print("[info] finished learning\n")
+    print("[info] finished learning\n")
     # if cfg.use_wandb:
     #     wandb.finish()
 
