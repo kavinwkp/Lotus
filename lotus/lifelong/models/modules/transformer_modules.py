@@ -298,9 +298,10 @@ class SparseMoE2(nn.Module):
         routing_weights, selected_experts = torch.topk(routing_weights, self.top_k, dim=-1)     # (bs*seq, 2)
 
         # calculate experts used num
-        flattened = selected_experts.flatten()
-        expert_count = torch.bincount(flattened, minlength=self.num_experts)
-        self.experts_counts += expert_count.cpu()
+        if not self.training:
+            flattened = selected_experts.flatten()
+            expert_count = torch.bincount(flattened, minlength=self.num_experts)
+            self.experts_counts += expert_count.cpu()
 
         # fusing weight && add
         routing_weights = routing_weights / torch.sum(routing_weights, dim=-1, keepdim=True).to(hidden_states.dtype)

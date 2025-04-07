@@ -27,14 +27,14 @@ import glob
 import h5py
 import init_path
 
-from hil.libero import get_libero_path
-from hil.libero.benchmark import get_benchmark
-# from hil.lifelong.algos import get_algo_class, get_algo_list
-from hil.lifelong.algos import *
-from hil.lifelong.models import get_policy_list
-from hil.lifelong.datasets import GroupedTaskDataset, SequenceVLDataset, get_dataset, SkillLearningDataset, MetaPolicyDataset, MetaPolicySequenceDataset
-from hil.lifelong.metric import evaluate_loss, evaluate_success
-from hil.lifelong.utils import (
+from lotus.libero import get_libero_path
+from lotus.libero.benchmark import get_benchmark
+# from lotus.lifelong.algos import get_algo_class, get_algo_list
+from lotus.lifelong.algos import *
+from lotus.lifelong.models import get_policy_list
+from lotus.lifelong.datasets import GroupedTaskDataset, SequenceVLDataset, get_dataset, SkillLearningDataset, MetaPolicyDataset, MetaPolicySequenceDataset
+from lotus.lifelong.metric import evaluate_loss, evaluate_success
+from lotus.lifelong.utils import (
     NpEncoder,
     compute_flops,
     control_seed,
@@ -45,9 +45,6 @@ from hil.lifelong.utils import (
 )
 
 
-from hil.lifelong.models.model_utils import safe_cuda
-from hil.lifelong.models.conf_utils import *
-# from hil.lifelong.models.torch_utils import *
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base=None)
