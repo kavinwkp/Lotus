@@ -22,14 +22,12 @@ class Multitask(Sequential):
     def __init__(self, n_tasks, cfg, **policy_kwargs):
         super().__init__(n_tasks=n_tasks, cfg=cfg, **policy_kwargs)
 
-    def learn_all_tasks(self, datasets, benchmark, result_summary, use_wandb):
+    def learn_all_tasks(self, datasets, benchmark, use_wandb):
         self.start_task(-1)
         concat_dataset = ConcatDataset(datasets)
 
         # learn on all tasks, only used in multitask learning
-        model_checkpoint_name = os.path.join(
-            self.experiment_dir, f"multitask_model.pth"
-        )
+        model_checkpoint_name = os.path.join(self.experiment_dir, f"multitask_model.pth")
         all_tasks = list(range(benchmark.n_tasks))
 
         train_dataloader = DataLoader(
@@ -81,13 +79,11 @@ class Multitask(Sequential):
                     "Training/step": epoch,
                 })
 
-            if epoch % self.cfg.eval.eval_every == 0:  # evaluate BC loss
+            if epoch > 30 and (epoch % self.cfg.eval.eval_every == 0):  # evaluate BC loss
                 t0 = time.time()
                 self.policy.eval()
 
-                model_checkpoint_name_ep = os.path.join(
-                    self.experiment_dir, f"multitask_model_ep{epoch}.pth"
-                )
+                model_checkpoint_name_ep = os.path.join(self.experiment_dir, f"multitask_model_ep{epoch}.pth")
                 torch_save_model(self.policy, model_checkpoint_name_ep, cfg=self.cfg)
                 losses.append(training_loss)
 
@@ -98,8 +94,8 @@ class Multitask(Sequential):
                 if self.cfg.lifelong.eval_in_train:
                     success_rates = evaluate_multitask_training_success(
                         self.cfg, self, benchmark, all_tasks
-                    )
-                    success_rate = np.mean(success_rates)
+                    )   # 每个任务的成功率
+                    success_rate = np.mean(success_rates)   # 所有任务的平均成功率
                 else:
                     success_rates = np.zeros(len(all_tasks))
                     success_rate = 0.0
@@ -118,34 +114,34 @@ class Multitask(Sequential):
                 tmp_successes = np.array(successes)
                 tmp_successes[idx_at_best_succ:] = successes[idx_at_best_succ]
 
-                if self.cfg.lifelong.eval_in_train:
-                    print(
-                        f"[info] Epoch: {epoch:3d} | succ: {success_rate:4.2f} ± {ci:4.2f} | best succ: {prev_success_rate} "
-                        + f"| succ. AoC {tmp_successes.sum()/cumulated_counter:4.2f} | time: {(t1-t0)/60:4.2f}",
-                        flush=True,
-                    )
-                    # plot the success rate curve to visualize the success rate on each task
-                    plt.figure(figsize=(10, 5))
-                    bars = plt.bar(np.arange(len(success_rates)), success_rates, align='center', alpha=0.75)
-                    plt.title(f"Success Rates at Epoch {epoch}, total {success_rate}")
-                    plt.xlabel("Task Index")
-                    plt.ylabel("Success Rate")
-                    plt.ylim(0, 1.1) 
-                    for bar in bars:
-                        yval = bar.get_height()
-                        plt.text(bar.get_x() + bar.get_width()/2, yval + 0.02, round(yval, 2), ha='center', va='bottom')
-                    
-
-                    if use_wandb:
-                        wandb.log({
-                            f"Training/all_task_success_rate": success_rate,
-                            f"Training/all_task_best_success_rate": prev_success_rate,
-                            f"Training/all_task_AoC": tmp_successes.sum()/cumulated_counter,
-                            f"Training/all_task_eval_time": (t1-t0)/60,
-                            "Training/step": epoch,
-                            "Training/task_suceess_rate": wandb.Image(plt),
-                        })   
-                    plt.close()                    
+                # if self.cfg.lifelong.eval_in_train:
+                #     print(
+                #         f"[info] Epoch: {epoch:3d} | succ: {success_rate:4.2f} ± {ci:4.2f} | best succ: {prev_success_rate} "
+                #         + f"| succ. AoC {tmp_successes.sum()/cumulated_counter:4.2f} | time: {(t1-t0)/60:4.2f}",
+                #         flush=True,
+                #     )
+                #     # plot the success rate curve to visualize the success rate on each task
+                #     plt.figure(figsize=(10, 5))
+                #     bars = plt.bar(np.arange(len(success_rates)), success_rates, align='center', alpha=0.75)
+                #     plt.title(f"Success Rates at Epoch {epoch}, total {success_rate}")
+                #     plt.xlabel("Task Index")
+                #     plt.ylabel("Success Rate")
+                #     plt.ylim(0, 1.1)
+                #     for bar in bars:
+                #         yval = bar.get_height()
+                #         plt.text(bar.get_x() + bar.get_width()/2, yval + 0.02, round(yval, 2), ha='center', va='bottom')
+                #
+                #
+                #     if use_wandb:
+                #         wandb.log({
+                #             f"Training/all_task_success_rate": success_rate,
+                #             f"Training/all_task_best_success_rate": prev_success_rate,
+                #             f"Training/all_task_AoC": tmp_successes.sum()/cumulated_counter,
+                #             f"Training/all_task_eval_time": (t1-t0)/60,
+                #             "Training/step": epoch,
+                #             "Training/task_suceess_rate": wandb.Image(plt),
+                #         })
+                #     plt.close()
 
             if self.scheduler is not None and epoch > 0:
                 self.scheduler.step()
@@ -156,12 +152,11 @@ class Multitask(Sequential):
         self.end_task(concat_dataset, -1, benchmark)
 
         # return the metrics regarding forward transfer
-        losses = np.array(losses)
-        successes = np.array(successes)
-        all_eval_successes = np.array(all_eval_successes)
-        auc_checkpoint_name = os.path.join(
-            self.experiment_dir, f"multitask_auc.log"
-        )
+        losses = np.array(losses)   # 每次评估的所有任务的平均损失
+        successes = np.array(successes)  # 每次评估的所有任务的平均成功率 [0.   , 0.725, 0.81 , 0.77 , 0.775, 0.785, 0.75 , 0.81 , 0.745, 0.78 , 0.745]
+        all_eval_successes = np.array(all_eval_successes)   # 每次评估的每个任务的成功率 是一个矩阵
+
+        auc_checkpoint_name = os.path.join(self.experiment_dir, f"multitask_auc.log")
         torch.save(
             {
                 "success": successes,

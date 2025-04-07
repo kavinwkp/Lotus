@@ -41,14 +41,14 @@ def main(hydra_cfg):
     cfg = EasyDict(yaml.safe_load(yaml_config))
 
     # print configs to terminal
-    pp = pprint.PrettyPrinter(indent=2)
+    # pp = pprint.PrettyPrinter(indent=2)
     # pp.pprint(cfg)
 
-    pp.pprint("Available algorithms:")
-    pp.pprint(get_algo_list())
-
-    pp.pprint("Available policies:")
-    pp.pprint(get_policy_list())
+    # pp.pprint("Available algorithms:")
+    # pp.pprint(get_algo_list())
+    #
+    # pp.pprint("Available policies:")
+    # pp.pprint(get_policy_list())
 
     # control seed
     control_seed(cfg.seed)
@@ -89,7 +89,7 @@ def main(hydra_cfg):
     # task_embs = get_task_embs(cfg, descriptions)    # language embedding for each task
     
     # save task_embs to file instead of computing it every time
-    task_embs_dir = os.path.join('/home/kavin/Documents/GitProjects/CL/Lotus/bert', benchmark.name)
+    task_embs_dir = os.path.join('bert', benchmark.name)
     os.makedirs(task_embs_dir, exist_ok=True)  # 确保目录存在
     task_embs_file = os.path.join(task_embs_dir, 'task_embs.pt')
 
@@ -171,15 +171,15 @@ def main(hydra_cfg):
     # define lifelong algorithm
     # algo = safe_device(get_algo_class(cfg.lifelong.algo)(n_tasks, cfg), cfg.device)     # Multitask
     algo = safe_device(Multitask(n_tasks, cfg), cfg.device)
-    if cfg.pretrain_model_path != "":  # load a pretrained model if there is any
-        try:
-            algo.policy.load_state_dict(torch_load_model(cfg.pretrain_model_path)[0])
-            print(f"[info] load pretrained model from {cfg.pretrain_model_path}")
-        except:
-            print(
-                f"[error] cannot load pretrained model from {cfg.pretrain_model_path}"
-            )
-            sys.exit(0)
+    # if cfg.pretrain_model_path != "":  # load a pretrained model if there is any
+    #     try:
+    #         algo.policy.load_state_dict(torch_load_model(cfg.pretrain_model_path)[0])
+    #         print(f"[info] load pretrained model from {cfg.pretrain_model_path}")
+    #     except:
+    #         print(
+    #             f"[error] cannot load pretrained model from {cfg.pretrain_model_path}"
+    #         )
+    #         sys.exit(0)
 
     # print(f"[info] start lifelong learning with algo {cfg.lifelong.algo}")
     # GFLOPs, MParams = compute_flops(algo, datasets[0], cfg)
@@ -191,7 +191,7 @@ def main(hydra_cfg):
 
     if cfg.lifelong.algo == "Multitask":
         algo.train()
-        s_fwd, l_fwd = algo.learn_all_tasks(datasets, benchmark, result_summary, cfg.use_wandb)
+        s_fwd, l_fwd = algo.learn_all_tasks(datasets, benchmark, cfg.use_wandb)
         result_summary["L_fwd"][-1] = l_fwd
         result_summary["S_fwd"][-1] = s_fwd
 
@@ -221,65 +221,68 @@ def main(hydra_cfg):
 
 
         # evalute on all seen tasks at the end if eval.eval is true
-        if cfg.eval.eval:
-            # L = evaluate_loss(cfg, algo, benchmark, datasets)
-            S = evaluate_success(
-                cfg=cfg,
-                algo=algo,
-                benchmark=benchmark,
-                task_ids=list(range(n_manip_tasks)),
-                result_summary=result_summary if cfg.eval.save_sim_states else None,
-            )
-
-            # result_summary["L_conf_mat"][-1] = L
-            result_summary["S_conf_mat"][-1] = S
-
-            if cfg.use_wandb:
-                fig1, ax1 = plt.subplots()
-                cax1 = ax1.matshow(result_summary["S_conf_mat"], cmap=plt.cm.Blues)
-                fig1.colorbar(cax1)
-                ax1.set_title('Success Confusion Matrix')
-
-                for j in range(result_summary["S_conf_mat"].shape[0]):
-                    for k in range(result_summary["S_conf_mat"].shape[1]):
-                        c = result_summary["S_conf_mat"][j,k]
-                        ax1.text(k, j, str(c), va='center', ha='center')
-
-                # fig2, ax2 = plt.subplots()
-                # cax2 = ax2.matshow(result_summary["L_conf_mat"], cmap=plt.cm.Reds)
-                # fig2.colorbar(cax2)
-                # ax2.set_title('Loss Confusion Matrix')
-
-                # for j in range(result_summary["L_conf_mat"].shape[0]):
-                #     for k in range(result_summary["L_conf_mat"].shape[1]):
-                #         c = result_summary["L_conf_mat"][j,k]
-                #         ax2.text(k, j, str(c), va='center', ha='center')
-
-                wandb.log({
-                    "Summary/success_confusion_matrix": wandb.Image(fig1),
-                    # "Summary/loss_confusion_matrix": wandb.Image(fig2),
-                    # f"Summary/all_task_losses": wandb.Histogram(L, num_bins=len(L)),
-                    f"Summary/all_task_success_rates": wandb.Histogram(S, num_bins=len(S)),
-                })
-
-                plt.close(fig1)
-                # plt.close(fig2)
-
-                wandb.run.summary["success_confusion_matrix"] = result_summary[
-                    "S_conf_mat"
-                ]
-                # wandb.run.summary["loss_confusion_matrix"] = result_summary[
-                #     "L_conf_mat"
-                # ]
-                wandb.run.summary["fwd_transfer_success"] = result_summary["S_fwd"]
-                # wandb.run.summary["fwd_transfer_loss"] = result_summary["L_fwd"]
-                # wandb.run.summary.update() # this is not needed in training
-
-
-            # print(("[All task loss ] " + " %4.2f |" * n_tasks) % tuple(L))
-            print(("[All task succ.] " + " %4.2f |" * n_tasks) % tuple(S))
-
-            torch.save(result_summary, os.path.join(cfg.experiment_dir, f"result.pt"))
+        # if cfg.eval.eval:
+        #     # L = evaluate_loss(cfg, algo, benchmark, datasets)
+        #     S = evaluate_success(
+        #         cfg=cfg,
+        #         algo=algo,
+        #         benchmark=benchmark,
+        #         task_ids=list(range(n_manip_tasks)),
+        #         result_summary=result_summary if cfg.eval.save_sim_states else None,
+        #     )
+        #
+        #     # result_summary["L_conf_mat"][-1] = L
+        #     result_summary["S_conf_mat"][-1] = S
+        #
+        #     if cfg.use_wandb:
+        #         fig1, ax1 = plt.subplots()
+        #         cax1 = ax1.matshow(result_summary["S_conf_mat"], cmap=plt.cm.Blues)
+        #         fig1.colorbar(cax1)
+        #         ax1.set_title('Success Confusion Matrix')
+        #
+        #         for j in range(result_summary["S_conf_mat"].shape[0]):
+        #             for k in range(result_summary["S_conf_mat"].shape[1]):
+        #                 c = result_summary["S_conf_mat"][j,k]
+        #                 ax1.text(k, j, str(c), va='center', ha='center')
+        #
+        #         # fig2, ax2 = plt.subplots()
+        #         # cax2 = ax2.matshow(result_summary["L_conf_mat"], cmap=plt.cm.Reds)
+        #         # fig2.colorbar(cax2)
+        #         # ax2.set_title('Loss Confusion Matrix')
+        #
+        #         # for j in range(result_summary["L_conf_mat"].shape[0]):
+        #         #     for k in range(result_summary["L_conf_mat"].shape[1]):
+        #         #         c = result_summary["L_conf_mat"][j,k]
+        #         #         ax2.text(k, j, str(c), va='center', ha='center')
+        #
+        #         wandb.log({
+        #             "Summary/success_confusion_matrix": wandb.Image(fig1),
+        #             # "Summary/loss_confusion_matrix": wandb.Image(fig2),
+        #             # f"Summary/all_task_losses": wandb.Histogram(L, num_bins=len(L)),
+        #             f"Summary/all_task_success_rates": wandb.Histogram(S, num_bins=len(S)),
+        #         })
+        #
+        #         plt.close(fig1)
+        #         # plt.close(fig2)
+        #
+        #         wandb.run.summary["success_confusion_matrix"] = result_summary[
+        #             "S_conf_mat"
+        #         ]
+        #         # wandb.run.summary["loss_confusion_matrix"] = result_summary[
+        #         #     "L_conf_mat"
+        #         # ]
+        #         wandb.run.summary["fwd_transfer_success"] = result_summary["S_fwd"]
+        #         # wandb.run.summary["fwd_transfer_loss"] = result_summary["L_fwd"]
+        #         # wandb.run.summary.update() # this is not needed in training
+        #
+        #
+        #     # print(("[All task loss ] " + " %4.2f |" * n_tasks) % tuple(L))
+        #     print(("[All task succ.] " + " %4.2f |" * n_tasks) % tuple(S))
+        #
+        #     # torch.save(result_summary, os.path.join(cfg.experiment_dir, f"result.pt"))
+        #     save_path = os.path.join(cfg.experiment_dir, "result.json")
+        #     with open(save_path, "w", encoding="utf-8") as f:
+        #         json.dump(result_summary, f, ensure_ascii=False, indent=4)
     # else:
     #     for i in range(n_tasks):
     #         print(f"[info] start training on task {i}")
