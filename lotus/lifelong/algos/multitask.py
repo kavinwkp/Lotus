@@ -96,6 +96,7 @@ class Multitask(Sequential):
                         self.cfg, self, benchmark, all_tasks
                     )   # 每个任务的成功率
                     success_rate = np.mean(success_rates)   # 所有任务的平均成功率
+                    print("success_rates: ", success_rates)
                 else:
                     success_rates = np.zeros(len(all_tasks))
                     success_rate = 0.0
