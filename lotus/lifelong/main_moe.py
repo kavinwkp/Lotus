@@ -55,7 +55,7 @@ def main(hydra_cfg):
 
     # print configs to terminal
     pp = pprint.PrettyPrinter(indent=2)
-    # pp.pprint(cfg)
+    pp.pprint(cfg)
     #
     # pp.pprint("Available algorithms:")
     # pp.pprint(get_algo_list())
