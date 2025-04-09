@@ -16,7 +16,7 @@ from lotus.libero.utils.video_utils import VideoWriter
 from lotus.lifelong.utils import *
 
 
-def raw_obs_to_tensor_obs(obs, task_emb, cfg):
+def raw_obs_to_tensor_obs(obs, task_emb, cfg, task_id):
     """
     Prepare the tensor observations as input for the algorithm.
     """
@@ -131,7 +131,7 @@ def evaluate_one_task_success(
             while steps < cfg.eval.max_steps:
                 steps += 1
 
-                data = raw_obs_to_tensor_obs(obs, task_emb, cfg)
+                data = raw_obs_to_tensor_obs(obs, task_emb, cfg, task_id)
                 actions = algo.policy.get_action(data)
 
                 obs, reward, done, info = env.step(actions)
