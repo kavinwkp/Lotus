@@ -110,6 +110,8 @@ class BasePolicy(nn.Module, metaclass=PolicyMeta):
                 data, {torch.Tensor: lambda x: x.unsqueeze(dim=1)}  # add time dimension
             )
             data["task_emb"] = data["task_emb"].squeeze(1)
+            if "task_id" in data:
+                data["task_id"] = data["task_id"].squeeze(1)
         return data
 
     def compute_loss(self, data, reduction="mean"):

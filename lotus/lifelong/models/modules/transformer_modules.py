@@ -277,15 +277,17 @@ class SparseMoE2(nn.Module):
 
         self.experts_counts = torch.zeros(num_experts, dtype=torch.long)
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states, task_id):
         batch_size, seq_len, hidden_dim = hidden_states.shape
 
-        router_logits = self.gate(hidden_states)    # (bs, seq, num_expert)
+        # router_logits = self.gate(hidden_states)    # (bs, seq, num_expert)
         # noise_logits = self.noise_linear(hidden_states)
         #
         # # Adding scaled unit gaussian noise to the logits
         # noise = torch.randn_like(router_logits) * F.softplus(noise_logits)
         # router_logits = router_logits + noise
+        gate_outputs = torch.stack([gate(hidden_states) for gate in self.gates], dim=1)
+        router_logits = gate_outputs[torch.arange(batch_size), task_id]
 
         hidden_states = hidden_states.view(-1, hidden_dim)  # bs*seq, hidden_dim
         routing_weights = F.softmax(router_logits, dim=-1)  # (bs, seq, num_expert)
@@ -399,7 +401,7 @@ class MoeTransformerDecoder(nn.Module):
             ).repeat_interleave(self.num_elements, dim=-2).unsqueeze(0)
             # (1, N, N), N = seq_len * num_elements
 
-    def forward(self, x, mask=None):
+    def forward(self, x, task_id, mask=None):
         aux_losses = 0.0
         for layer_idx, (att_norm, att, ff_norm, moe) in enumerate(self.layers):
             if mask is not None:
@@ -412,10 +414,10 @@ class MoeTransformerDecoder(nn.Module):
             if not self.training:
                 self.attention_output[layer_idx] = att.att_weights
 
-            out, loss = moe(ff_norm(x))
+            out, loss = moe(ff_norm(x), task_id)
             x = x + self.drop_path(out)
             aux_losses += loss
-        aux_losses /= len(self.layers)
+        # aux_losses /= len(self.layers)
         return x, aux_losses
 
     @property

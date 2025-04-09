@@ -25,6 +25,7 @@ def raw_obs_to_tensor_obs(obs, task_emb, cfg):
     data = {
         "obs": {},
         "task_emb": task_emb.repeat(env_num, 1),
+        "task_id": torch.full((env_num,), task_id)
     }
 
     all_obs_keys = []

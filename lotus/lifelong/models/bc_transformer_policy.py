@@ -604,14 +604,14 @@ class BCTransformerMoEPolicy(BasePolicy):
         self.latent_queue = []
         self.max_seq_len = policy_cfg.transformer_max_seq_len   # 10
 
-    def temporal_encode(self, x):
+    def temporal_encode(self, x, task_id):
         pos_emb = self.temporal_position_encoding_fn(x)     # (1, 64)
         x = x + pos_emb.unsqueeze(1)  # (B, T, num_modality, E)
         sh = x.shape
         self.temporal_transformer.compute_mask(x.shape)
 
         x = TensorUtils.join_dimensions(x, 1, 2)  # (B, T*num_modality, E)
-        x, aux_loss = self.temporal_transformer(x)
+        x, aux_loss = self.temporal_transformer(x, task_id)
         x = x.reshape(*sh)
         if self.training:
             return x[:, :, 0], aux_loss  # (B, T, E)
@@ -647,7 +647,7 @@ class BCTransformerMoEPolicy(BasePolicy):
 
     def forward(self, data):
         x = self.spatial_encode(data)
-        x, aux_loss = self.temporal_encode(x)
+        x, aux_loss = self.temporal_encode(x, data["task_id"])
         dist = self.policy_head(x)
         if self.training:
             return dist, aux_loss
@@ -666,7 +666,7 @@ class BCTransformerMoEPolicy(BasePolicy):
             if len(self.latent_queue) > self.max_seq_len:
                 self.latent_queue.pop(0)
             x = torch.cat(self.latent_queue, dim=1)  # (B, T, H_all)    (20, 10, 5, 64)
-            x = self.temporal_encode(x)     # (20, 10, 64)
+            x = self.temporal_encode(x, data["task_id"])     # (20, 10, 64)
             dist = self.policy_head(x[:, -1])   # (20, 64) -> (20, 7)
         action = dist.sample().detach().cpu()   # (20, 7)
         return action.view(action.shape[0], -1).numpy()

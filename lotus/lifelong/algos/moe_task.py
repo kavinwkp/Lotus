@@ -30,7 +30,8 @@ class Moetask(Sequential):
         self.optimizer.zero_grad()
         loss, aux_loss = self.policy.compute_loss(data)
 
-        loss = loss + 0.1 * aux_loss
+        alpha = 1
+        loss = loss + alpha * aux_loss
         # loss = loss
 
         (self.loss_scale * loss).backward()
@@ -81,7 +82,7 @@ class Moetask(Sequential):
                 training_loss += loss
                 aux_loss += aux_loss
             training_loss /= len(train_dataloader)
-            # aux_loss /= len(train_dataloader)
+            aux_loss /= len(train_dataloader)
             # else:  # just evaluate the zero-shot performance on 0-th epoch
             #     training_loss = 0.0
             #     for (idx, data) in enumerate(train_dataloader):
