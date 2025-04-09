@@ -2,8 +2,8 @@ policy_type: BCTransformerMoEPolicy
 extra_num_layers: 0
 extra_hidden_size: 0
 embed_size: 64
-num_experts: 16
-top_k: 4
+num_experts: 8
+top_k: 2
 
 transformer_input_size: null
 transformer_num_layers: 4
