@@ -268,8 +268,8 @@ class SparseMoE2(nn.Module):
         super().__init__()
         self.num_experts = num_experts
         self.top_k = top_k
-
-        self.gate = nn.Linear(in_features, num_experts)
+        self.gates = nn.ModuleList([nn.Linear(in_features, num_experts) for _ in range(num_experts)])
+        # self.gate = nn.Linear(in_features, num_experts)
         self.noise_linear = nn.Linear(in_features, num_experts)
 
         self.experts = nn.ModuleList([Expert(in_features) for _ in range(self.num_experts)])
