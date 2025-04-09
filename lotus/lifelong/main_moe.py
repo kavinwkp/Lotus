@@ -77,7 +77,7 @@ def main(hydra_cfg):
     # prepare datasets from the benchmark
     manip_datasets = []
     descriptions = []
-
+    task_ids = []
     shape_meta = None
 
     for i in range(n_tasks):
@@ -99,7 +99,7 @@ def main(hydra_cfg):
         task_description = benchmark.get_task(i).language
         descriptions.append(task_description)
         manip_datasets.append(task_i_dataset)
-
+        task_ids.append(i)
 
     # save task_embs to file instead of computing it every time
     task_embs_dir = os.path.join('bert', benchmark.name)
@@ -116,7 +116,7 @@ def main(hydra_cfg):
     benchmark.set_task_embs(task_embs)
     task_names = benchmark.get_task_names()
 
-    datasets = [SequenceVLDataset(ds, emb) for (ds, emb) in zip(manip_datasets, task_embs)]  # 把每个任务的数据集和语言嵌入打包成一个数据集
+    datasets = [SequenceVLDataset(ds, emb, id) for (ds, emb, id) in zip(manip_datasets, task_embs, task_ids)]  # 把每个任务的数据集和语言嵌入打包成一个数据集
     n_demos = [data.n_demos for data in datasets]
     n_sequences = [data.total_num_sequences for data in datasets]
 
