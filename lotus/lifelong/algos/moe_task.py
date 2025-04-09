@@ -82,7 +82,7 @@ class Moetask(Sequential):
                 training_loss += loss
                 aux_loss += aux_loss
             training_loss /= len(train_dataloader)
-            aux_loss /= len(train_dataloader)
+            # aux_loss /= len(train_dataloader)
             # else:  # just evaluate the zero-shot performance on 0-th epoch
             #     training_loss = 0.0
             #     for (idx, data) in enumerate(train_dataloader):
