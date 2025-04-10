@@ -270,7 +270,7 @@ class SparseMoE2(nn.Module):
         self.top_k = top_k
         self.is_multigate = is_multigate
         if self.is_multigate:
-            self.gates = nn.ModuleList([nn.Linear(in_features, num_experts) for _ in range(num_experts)])
+            self.gates = nn.ModuleList([nn.Linear(in_features, num_experts) for _ in range(10)])
         else:
             self.gate = nn.Linear(in_features, num_experts)
         self.noise_linear = nn.Linear(in_features, num_experts)
