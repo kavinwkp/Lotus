@@ -580,6 +580,7 @@ class BCTransformerMoEPolicy(BasePolicy):
         # )
 
         ## TODO: replace to Moe transformer
+        self.is_multigate = False   # policy_cfg.is_multigate
         self.temporal_transformer = MoeTransformerDecoder(
             input_size=embed_size,
             num_layers=policy_cfg.transformer_num_layers,
@@ -588,6 +589,7 @@ class BCTransformerMoEPolicy(BasePolicy):
             num_experts=policy_cfg.num_experts,
             top_k=policy_cfg.top_k,
             dropout=policy_cfg.transformer_dropout,
+            is_multigate=self.is_multigate
         )
 
         policy_head_kwargs = policy_cfg.policy_head.network_kwargs
@@ -604,7 +606,7 @@ class BCTransformerMoEPolicy(BasePolicy):
         self.latent_queue = []
         self.max_seq_len = policy_cfg.transformer_max_seq_len   # 10
 
-    def temporal_encode(self, x, task_id):
+    def temporal_encode(self, x, task_id=None):
         pos_emb = self.temporal_position_encoding_fn(x)     # (1, 64)
         x = x + pos_emb.unsqueeze(1)  # (B, T, num_modality, E)
         sh = x.shape
@@ -647,7 +649,10 @@ class BCTransformerMoEPolicy(BasePolicy):
 
     def forward(self, data):
         x = self.spatial_encode(data)
-        x, aux_loss = self.temporal_encode(x, data["task_id"])
+        if self.is_multigate:
+            x, aux_loss = self.temporal_encode(x, data["task_id"])
+        else:
+            x, aux_loss = self.temporal_encode(x)
         dist = self.policy_head(x)
         if self.training:
             return dist, aux_loss
@@ -666,7 +671,10 @@ class BCTransformerMoEPolicy(BasePolicy):
             if len(self.latent_queue) > self.max_seq_len:
                 self.latent_queue.pop(0)
             x = torch.cat(self.latent_queue, dim=1)  # (B, T, H_all)    (20, 10, 5, 64)
-            x = self.temporal_encode(x, data["task_id"])     # (20, 10, 64)
+            if self.is_multigate:
+                x = self.temporal_encode(x, data["task_id"])     # (20, 10, 64)
+            else:
+                x = self.temporal_encode(x)     # (20, 10, 64)
             dist = self.policy_head(x[:, -1])   # (20, 64) -> (20, 7)
         action = dist.sample().detach().cpu()   # (20, 7)
         return action.view(action.shape[0], -1).numpy()

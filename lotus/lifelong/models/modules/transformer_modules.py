@@ -264,12 +264,15 @@ class Expert(nn.Module):
 
 class SparseMoE2(nn.Module):
 
-    def __init__(self, in_features, num_experts, top_k):
+    def __init__(self, in_features, num_experts, top_k, is_multigate):
         super().__init__()
         self.num_experts = num_experts
         self.top_k = top_k
-        self.gates = nn.ModuleList([nn.Linear(in_features, num_experts) for _ in range(num_experts)])
-        # self.gate = nn.Linear(in_features, num_experts)
+        self.is_multigate = is_multigate
+        if self.is_multigate:
+            self.gates = nn.ModuleList([nn.Linear(in_features, num_experts) for _ in range(num_experts)])
+        else:
+            self.gate = nn.Linear(in_features, num_experts)
         self.noise_linear = nn.Linear(in_features, num_experts)
 
         self.experts = nn.ModuleList([Expert(in_features) for _ in range(self.num_experts)])
@@ -277,17 +280,20 @@ class SparseMoE2(nn.Module):
 
         self.experts_counts = torch.zeros(num_experts, dtype=torch.long)
 
-    def forward(self, hidden_states, task_id):
+    def forward(self, hidden_states, task_id=None):
         batch_size, seq_len, hidden_dim = hidden_states.shape
 
-        # router_logits = self.gate(hidden_states)    # (bs, seq, num_expert)
+        if self.is_multigate:
+            gate_outputs = torch.stack([gate(hidden_states) for gate in self.gates], dim=1)
+            router_logits = gate_outputs[torch.arange(batch_size), task_id]
+        else:
+            router_logits = self.gate(hidden_states)    # (bs, seq, num_expert)
         # noise_logits = self.noise_linear(hidden_states)
         #
         # # Adding scaled unit gaussian noise to the logits
         # noise = torch.randn_like(router_logits) * F.softplus(noise_logits)
         # router_logits = router_logits + noise
-        gate_outputs = torch.stack([gate(hidden_states) for gate in self.gates], dim=1)
-        router_logits = gate_outputs[torch.arange(batch_size), task_id]
+
 
         hidden_states = hidden_states.view(-1, hidden_dim)  # bs*seq, hidden_dim
         routing_weights = F.softmax(router_logits, dim=-1)  # (bs, seq, num_expert)
@@ -350,6 +356,7 @@ class MoeTransformerDecoder(nn.Module):
         num_experts,
         top_k,
         dropout,
+        is_multigate=False,
     ):
         super().__init__()
 
@@ -357,6 +364,7 @@ class MoeTransformerDecoder(nn.Module):
         self.drop_path = DropPath(dropout) if dropout > 0.0 else nn.Identity()
 
         self.attention_output = {}
+        self.is_multigate = is_multigate
 
         for _ in range(num_layers):
             self.layers.append(
@@ -370,7 +378,7 @@ class MoeTransformerDecoder(nn.Module):
                             dropout=dropout,
                         ),
                         Norm(input_size),
-                        SparseMoE2(input_size, num_experts=num_experts, top_k=top_k),
+                        SparseMoE2(input_size, num_experts=num_experts, top_k=top_k, is_multigate=is_multigate),
                         # MoE(input_size, num_experts=num_experts, top_k=top_k),
                     ]
                 )
@@ -401,7 +409,7 @@ class MoeTransformerDecoder(nn.Module):
             ).repeat_interleave(self.num_elements, dim=-2).unsqueeze(0)
             # (1, N, N), N = seq_len * num_elements
 
-    def forward(self, x, task_id, mask=None):
+    def forward(self, x, task_id=None, mask=None):
         aux_losses = 0.0
         for layer_idx, (att_norm, att, ff_norm, moe) in enumerate(self.layers):
             if mask is not None:
