@@ -580,7 +580,7 @@ class BCTransformerMoEPolicy(BasePolicy):
         # )
 
         ## TODO: replace to Moe transformer
-        self.is_multigate = False   # policy_cfg.is_multigate
+        self.is_multigate = policy_cfg.is_multigate
         self.temporal_transformer = MoeTransformerDecoder(
             input_size=embed_size,
             num_layers=policy_cfg.transformer_num_layers,
