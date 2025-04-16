@@ -271,3 +271,35 @@ class Sequential(nn.Module, metaclass=AlgoMeta):
 
     def reset(self):
         self.policy.reset()
+
+
+class Task(nn.Module, metaclass=AlgoMeta):
+    def __init__(self, n_tasks, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self.policy = None
+
+    def start_task(self, task):
+        """
+        What the algorithm does at the beginning of learning each lifelong task.
+        """
+        self.current_task = task
+
+        # initialize the optimizer and scheduler
+        self.optimizer = eval(self.cfg.train.optimizer.name)(
+            self.policy.parameters(), **self.cfg.train.optimizer.kwargs
+        )   # AdamW
+
+        self.scheduler = None
+        if self.cfg.train.scheduler is not None:
+            self.scheduler = eval(self.cfg.train.scheduler.name)(
+                self.optimizer,
+                T_max=self.cfg.train.n_epochs,
+                **self.cfg.train.scheduler.kwargs,
+            )   # CosineAnnealingLR
+
+    def map_tensor_to_device(self, data):
+        """Move data to the device specified by self.cfg.device."""
+        return TensorUtils.map_tensor(
+            data, lambda x: safe_device(x, device=self.cfg.device)
+        )

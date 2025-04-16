@@ -1,0 +1,142 @@
+
+
+defaults:
+  - _self_
+  - data: default
+  - policy: baku_policy
+  - train: default
+  - eval: default
+  - lifelong: baku
+#  - test: null
+#  - skill_learning: default
+
+use_wandb: false
+wandb_project: "lifelong learning"
+folder: null # use default path
+bddl_folder: null # use default path
+init_states_folder: null # use default path
+load_previous_model: false
+task_embedding_format: "bert"
+task_embedding_one_hot_offset: 1
+pretrain: false
+pretrain_model_path: ""
+benchmark_name: "LIBERO_SPATIAL"
+exp: ""
+
+
+root_dir: /home/kavin/Documents/GitProjects/MultiTask/BAKU
+seed: 1
+save_video: true
+save_train_video: false
+batch_size: 64
+num_demos_per_task: 50
+use_actions: false
+eval: true
+experiment: eval
+experiment_label: ${policy_head}
+expert_dataset: ${dataloader.bc_dataset}
+#bc_weight: /home/kavin/Documents/GitProjects/MultiTask/BAKU/baku/snapshot/600000.pt
+#obs_shape: ???
+#action_shape: ???
+device: cuda
+lr: 0.0001
+hidden_dim: 512
+dim_feedforward: 3200
+lr_backbone: 1e-4
+backbone: resnet18
+enc_layers: 4
+dec_layers: 1
+nheads: 8
+
+use_tb: true
+augment: true
+obs_type: pixels
+encoder_type: resnet
+policy_type: gpt
+policy_head: deterministic
+pixel_keys: ${suite.pixel_keys}
+proprio_key: ${suite.proprio_key}
+feature_key: ${suite.feature_key}
+use_proprio: true
+train_encoder: true
+norm: false
+history: ${suite.history}
+history_len: ${suite.history_len}
+eval_history_len: ${suite.eval_history_len}
+separate_encoders: false
+temporal_agg: false
+max_episode_len: ${suite.task_make_fn.max_episode_len}
+num_queries: 10
+use_language: true
+prompt: text
+film: true
+multitask: true
+kl_weight: 10
+
+
+suite:
+  suite: libero
+  name: libero_goal
+  frame_stack: 1
+  action_repeat: 1
+  discount: 0.99
+  hidden_dim: 256
+  num_train_steps: 601000
+  log_every_steps: 1000
+  save_every_steps: 200000
+  history: false
+  history_len: 10
+  eval_every_steps: 200000
+  num_eval_episodes: 10
+  eval_history_len: 5
+  pixel_keys:
+  - agentview_rgb
+  - eye_in_hand_rgb
+  proprio_key: proprioceptive
+  feature_key: features
+  save_snapshot: true
+  task_make_fn:
+#    _target_: suite.libero.make
+    suite: ${suite.task.suite}
+    scenes: ${suite.task.scenes}
+    tasks: ${suite.task.tasks}
+    frame_stack: ${suite.frame_stack}
+    action_repeat: ${suite.action_repeat}
+    seed: ${seed}
+    height: 128
+    width: 128
+    max_episode_len: 347
+    max_state_dim: 79
+    eval: ${eval}
+  task:
+    suite: libero_goal
+    scenes:
+    - kitchen
+    tasks:
+    - kitchen:
+      - open_the_middle_drawer_of_the_cabinet
+      - open_the_top_drawer_and_put_the_bowl_inside
+      - push_the_plate_to_the_front_of_the_stove
+      - put_the_bowl_on_the_plate
+      - put_the_bowl_on_the_stove
+      - put_the_bowl_on_top_of_the_cabinet
+      - put_the_cream_cheese_in_the_bowl
+      - put_the_wine_bottle_on_the_rack
+      - put_the_wine_bottle_on_top_of_the_cabinet
+      - turn_on_the_stove
+dataloader:
+  bc_dataset:
+#    _target_: read_data.libero.BCDataset
+    path: ${root_dir}/expert_demos/libero
+    suite: ${suite.task.suite}
+    scenes: ${suite.task.scenes}
+    tasks: ${suite.task.tasks}
+    num_demos_per_task: ${num_demos_per_task}
+    obs_type: ${obs_type}
+    history: ${suite.history}
+    history_len: ${suite.history_len}
+    prompt: ${prompt}
+    temporal_agg: ${temporal_agg}
+    num_queries: ${num_queries}
+    img_size: 128
+    store_actions: true
