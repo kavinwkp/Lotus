@@ -304,7 +304,8 @@ def main():
 
     print(f"[info] finish for ckpt at {run_folder} in {t.get_elapsed_time()} sec for rollouts")
     print(f"Results are saved at {save_folder}")
-    print("success_rate: ", success_rate)
+    print("\nsuccess_rate: ", success_rate)
+    print("=" * 50)
 
 
 if __name__ == "__main__":
