@@ -324,7 +324,7 @@ class MTACTtask(Task):
                 f"[info] Epoch: {epoch:3d} | train loss: {training_loss:5.4f} | time: {(t1-t0)/60:4.2f}"
             )
 
-            if epoch > 80 and epoch % self.cfg.eval.eval_every == 0:  # evaluate BC loss
+            if epoch > 30 and epoch % self.cfg.eval.eval_every == 0:  # evaluate BC loss
                 self.policy.eval()
 
                 model_checkpoint_name_ep = os.path.join(self.experiment_dir, f"multitask_model_ep{epoch}.pth")
