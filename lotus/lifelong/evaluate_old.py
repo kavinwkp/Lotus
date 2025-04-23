@@ -80,7 +80,7 @@ def parse_args():
         required=True,
         # choices=["libero_10", "libero_spatial", "libero_object", "libero_goal", "libero_100"],
     )
-    parser.add_argument("--task_id", type=int, required=True)
+    parser.add_argument("--task_id", type=int, required=False)
     # method detail
     parser.add_argument(
         "--algo",
@@ -115,8 +115,9 @@ def parse_args():
     return args
 
 
-def main():
-    args = parse_args()
+def main(args):
+    control_seed(args.seed)
+    # args = parse_args()
     # e.g., experiments/LIBERO_SPATIAL/Multitask/BCRNNPolicy_seed100/
 
     # experiment_dir = os.path.join(
@@ -324,4 +325,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    args = parse_args()
+    success_ep = []
+    for i in range(10):
+        args.task_id = i
+        success_ep.append(main(args))
+    avg_success_ep = sum(success_ep) / len(success_ep)
+    print(f"[info] success_rate: {success_ep}")
+    print(f"[info] average success_rate: {avg_success_ep}")

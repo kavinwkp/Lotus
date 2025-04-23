@@ -65,6 +65,7 @@ def main(hydra_cfg):
     # prepare datasets from the benchmark
     manip_datasets = []
     descriptions = []
+    task_ids = []
     shape_meta = None
 
     for i in range(n_manip_tasks):
@@ -85,6 +86,7 @@ def main(hydra_cfg):
         task_description = benchmark.get_task(i).language
         descriptions.append(task_description)   # language description for each task
         manip_datasets.append(task_i_dataset)   # datasets for each task
+        task_ids.append(i)
 
     # task_embs = get_task_embs(cfg, descriptions)    # language embedding for each task
     
@@ -105,7 +107,7 @@ def main(hydra_cfg):
     gsz = cfg.data.task_group_size  # 1
     # if gsz == 1:  # each manipulation task is its own lifelong learning task
     datasets = [
-        SequenceVLDataset(ds, emb) for (ds, emb) in zip(manip_datasets, task_embs)
+        SequenceVLDataset(ds, emb, id) for (ds, emb, id) in zip(manip_datasets, task_embs, task_ids)
     ]   # 把每个任务的数据集和语言嵌入打包成一个数据集
     n_demos = [data.n_demos for data in datasets]
     n_sequences = [data.total_num_sequences for data in datasets]
