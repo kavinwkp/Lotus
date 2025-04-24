@@ -173,6 +173,8 @@ def main(hydra_cfg):
     # define lifelong algorithm
     # algo = safe_device(get_algo_class(cfg.lifelong.algo)(n_tasks, cfg), cfg.device)     # Multitask
     algo = safe_device(Multitask(n_tasks, cfg), cfg.device)
+    model_size = sum(p.numel() for p in algo.policy.parameters() if p.requires_grad)
+    print(f"[info] Model size: {model_size / 1e6:.2f}M")
     # if cfg.pretrain_model_path != "":  # load a pretrained model if there is any
     #     try:
     #         algo.policy.load_state_dict(torch_load_model(cfg.pretrain_model_path)[0])
