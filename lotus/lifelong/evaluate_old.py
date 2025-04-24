@@ -288,7 +288,7 @@ def main(args):
             while steps < cfg.eval.max_steps:
                 steps += 1
 
-                data = raw_obs_to_tensor_obs(obs, task_emb, cfg)
+                data = raw_obs_to_tensor_obs(obs, task_emb, cfg, args.task_id)
                 actions = algo.policy.get_action(data)
                 obs, reward, done, info = env.step(actions)
                 video_writer.append_vector_obs(
