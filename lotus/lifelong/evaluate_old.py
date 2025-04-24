@@ -322,6 +322,7 @@ def main(args):
     print(f"[info] finish for ckpt at {run_folder} in {t.get_elapsed_time()} sec for rollouts")
     print(f"Results are saved at {save_folder}")
     print(test_loss, success_rate)
+    return success_rate
 
 
 if __name__ == "__main__":
