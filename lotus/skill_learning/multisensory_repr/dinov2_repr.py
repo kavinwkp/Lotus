@@ -6,6 +6,9 @@ import h5py
 import os
 from functools import partial
 import sys
+
+import tqdm
+
 sys.path.append('dinov2')
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
@@ -204,6 +207,19 @@ if __name__ == "__main__":
             "../datasets/libero_goal/put_the_wine_bottle_on_top_of_the_cabinet_demo",
             "../datasets/libero_goal/turn_on_the_stove_demo",
         ]
+    elif args.benchmark_name == "libero_10":
+        Dataset_Name_List = [
+            "../datasets/libero_10/LIVING_ROOM_SCENE2_put_both_the_alphabet_soup_and_the_tomato_sauce_in_the_basket_demo",
+            "../datasets/libero_10/LIVING_ROOM_SCENE2_put_both_the_cream_cheese_box_and_the_butter_in_the_basket_demo",
+            "../datasets/libero_10/KITCHEN_SCENE3_turn_on_the_stove_and_put_the_moka_pot_on_it_demo",
+            "../datasets/libero_10/KITCHEN_SCENE4_put_the_black_bowl_in_the_bottom_drawer_of_the_cabinet_and_close_it_demo",
+            "../datasets/libero_10/LIVING_ROOM_SCENE5_put_the_white_mug_on_the_left_plate_and_put_the_yellow_and_white_mug_on_the_right_plate_demo",
+            "../datasets/libero_10/STUDY_SCENE1_pick_up_the_book_and_place_it_in_the_back_compartment_of_the_caddy_demo",
+            "../datasets/libero_10/LIVING_ROOM_SCENE6_put_the_white_mug_on_the_plate_and_put_the_chocolate_pudding_to_the_right_of_the_plate_demo",
+            "../datasets/libero_10/LIVING_ROOM_SCENE1_put_both_the_alphabet_soup_and_the_cream_cheese_box_in_the_basket_demo",
+            "../datasets/libero_10/KITCHEN_SCENE8_put_both_moka_pots_on_the_stove_demo",
+            "../datasets/libero_10/KITCHEN_SCENE6_put_the_yellow_and_white_mug_in_the_microwave_and_close_it_demo",
+        ]
 
     for dataset_name in Dataset_Name_List:
         dataset_hdf5_file = dataset_name + ".hdf5"
@@ -219,21 +235,22 @@ if __name__ == "__main__":
         embedding_file = h5py.File(embedding_name, "w")
         grp = embedding_file.create_group("data")
 
-        for i in range(demo_num):
+        for i in tqdm.tqdm(range(demo_num)):
+        # for i in range(2):
             agentview_images = safe_cuda(torch.from_numpy(f[f"data/demo_{i}/obs/agentview_rgb"][()].transpose(0, 3, 1, 2))).float()
             eye_in_hand_images = safe_cuda(torch.from_numpy(f[f"data/demo_{i}/obs/eye_in_hand_rgb"][()].transpose(0, 3, 1, 2))).float()
-            joint_states = safe_cuda(torch.from_numpy(f[f"data/demo_{i}/obs/joint_states"][()])).float()
-            gripper_states = safe_cuda(torch.from_numpy(f[f"data/demo_{i}/obs/gripper_states"][()])).float()
-            ee_states = safe_cuda(torch.from_numpy(f[f"data/demo_{i}/obs/ee_states"][()])).float()
-            proprio_states = torch.cat([joint_states, gripper_states, ee_states], dim=1).float()
-            proprio = safe_cuda(proprio_states)
+            # joint_states = safe_cuda(torch.from_numpy(f[f"data/demo_{i}/obs/joint_states"][()])).float()
+            # gripper_states = safe_cuda(torch.from_numpy(f[f"data/demo_{i}/obs/gripper_states"][()])).float()
+            # ee_states = safe_cuda(torch.from_numpy(f[f"data/demo_{i}/obs/ee_states"][()])).float()
+            # proprio_states = torch.cat([joint_states, gripper_states, ee_states], dim=1).float()
+            # proprio = safe_cuda(proprio_states)
             agentview_features = []
             eye_in_hand_features = []
 
             for j in range(0, len(agentview_images), args.batch_size):
                 batch_images = agentview_images[j:j + args.batch_size].permute(0, 2, 3, 1).cpu().numpy()
                 resized_images = [cv2.resize(img, (448, 448), interpolation=cv2.INTER_NEAREST) for img in batch_images]
-                features = dinov2.process_images(resized_images)
+                features = dinov2.process_images(resized_images)    # (bs, 32, 32, 768)
                 agentview_features_batch = rescale_feature_map(torch.as_tensor(features).permute(0, 3, 1, 2), 1, 1, convert_to_numpy=False).squeeze()  # (B, 768)
                 if agentview_features_batch.dim() == 1:
                     agentview_features_batch = agentview_features_batch.unsqueeze(0)
@@ -248,7 +265,7 @@ if __name__ == "__main__":
                     eye_in_hand_features_batch = eye_in_hand_features_batch.unsqueeze(0)
                 eye_in_hand_features.append(eye_in_hand_features_batch)
 
-            agentview_features = torch.cat(agentview_features, dim=0)
+            agentview_features = torch.cat(agentview_features, dim=0)   # (258, 768)
             eye_in_hand_features = torch.cat(eye_in_hand_features, dim=0)
             embeddings = torch.cat([agentview_features, eye_in_hand_features], dim=1).cpu().unsqueeze(1).numpy().astype('float32')
             if np.isnan(embeddings).any():
