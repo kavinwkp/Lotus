@@ -171,8 +171,8 @@ def main(hydra_cfg):
     #                 ]
 
     # define lifelong algorithm
-    # algo = safe_device(get_algo_class(cfg.lifelong.algo)(n_tasks, cfg), cfg.device)     # Multitask
-    algo = safe_device(Multitask(n_tasks, cfg), cfg.device)
+    algo = safe_device(get_algo_class(cfg.lifelong.algo)(n_tasks, cfg), cfg.device)     # Multitask
+    # algo = safe_device(Multitask(n_tasks, cfg), cfg.device)
     model_size = sum(p.numel() for p in algo.policy.parameters() if p.requires_grad)
     print(f"[info] Model size: {model_size / 1e6:.2f}M")
     # if cfg.pretrain_model_path != "":  # load a pretrained model if there is any
@@ -185,9 +185,9 @@ def main(hydra_cfg):
     #         )
     #         sys.exit(0)
 
-    # print(f"[info] start lifelong learning with algo {cfg.lifelong.algo}")
-    # GFLOPs, MParams = compute_flops(algo, datasets[0], cfg)
-    # print(f"[info] policy has {GFLOPs:.1f} GFLOPs and {MParams:.1f} MParams\n")
+    print(f"[info] start lifelong learning with algo {cfg.lifelong.algo}")
+    GFLOPs, MParams = compute_flops(algo, datasets[0], cfg)
+    print(f"[info] policy has {GFLOPs:.1f} GFLOPs and {MParams:.1f} MParams\n")
 
     # save the experiment config file, so we can resume or replay later
     with open(os.path.join(cfg.experiment_dir, "config.json"), "w") as f:
@@ -287,118 +287,118 @@ def main(hydra_cfg):
         #     save_path = os.path.join(cfg.experiment_dir, "result.json")
         #     with open(save_path, "w", encoding="utf-8") as f:
         #         json.dump(result_summary, f, ensure_ascii=False, indent=4)
-    # else:
-    #     for i in range(n_tasks):
-    #         print(f"[info] start training on task {i}")
-    #         algo.train()
-    #
-    #         t0 = time.time()
-    #         s_fwd, l_fwd = algo.learn_one_task(
-    #             datasets[i], i, benchmark, result_summary, cfg.use_wandb
-    #         )
-    #         result_summary["S_fwd"][i] = s_fwd
-    #         result_summary["L_fwd"][i] = l_fwd
-    #         t1 = time.time()
-    #
-    #         if cfg.use_wandb:
-    #             fig1, ax1 = plt.subplots()
-    #             bars1 = ax1.bar(np.arange(len(result_summary["S_fwd"])), result_summary["S_fwd"])
-    #             ax1.set_title('Forward Transfer Success')
-    #
-    #             for bar in bars1:
-    #                 yval = bar.get_height()
-    #                 ax1.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
-    #
-    #             fig2, ax2 = plt.subplots()
-    #             bars2 = ax2.bar(np.arange(len(result_summary["L_fwd"])), result_summary["L_fwd"])
-    #             ax2.set_title('Forward Transfer Loss')
-    #
-    #             for bar in bars2:
-    #                 yval = bar.get_height()
-    #                 ax2.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
-    #
-    #             wandb.log({
-    #                 "Summary/fwd_transfer_success": wandb.Image(fig1),
-    #                 "Summary/fwd_transfer_loss": wandb.Image(fig2),
-    #                 "Summary/task_step": i,
-    #                 "Summary/train_time": (t1-t0)/60,
-    #             })
-    #
-    #             plt.close(fig1)
-    #             plt.close(fig2)
-    #
-    #
-    #         # evalute on all seen tasks at the end of learning each task
-    #         if cfg.eval.eval:
-    #             L = evaluate_loss(cfg, algo, benchmark, datasets[: i + 1])
-    #             t2 = time.time()
-    #             S = evaluate_success(
-    #                 cfg=cfg,
-    #                 algo=algo,
-    #                 benchmark=benchmark,
-    #                 task_ids=list(range((i + 1) * gsz)),
-    #                 result_summary=result_summary if cfg.eval.save_sim_states else None,
-    #             )
-    #             t3 = time.time()
-    #             result_summary["L_conf_mat"][i][: i + 1] = L
-    #             result_summary["S_conf_mat"][i][: i + 1] = S
-    #
-    #             if cfg.use_wandb:
-    #                 fig1, ax1 = plt.subplots()
-    #                 cax1 = ax1.matshow(result_summary["S_conf_mat"], cmap=plt.cm.Blues)
-    #                 fig1.colorbar(cax1)
-    #                 ax1.set_title('Success Confusion Matrix')
-    #
-    #                 for j in range(result_summary["S_conf_mat"].shape[0]):
-    #                     for k in range(result_summary["S_conf_mat"].shape[1]):
-    #                         c = result_summary["S_conf_mat"][j,k]
-    #                         ax1.text(k, j, str(c), va='center', ha='center')
-    #
-    #                 fig2, ax2 = plt.subplots()
-    #                 cax2 = ax2.matshow(result_summary["L_conf_mat"], cmap=plt.cm.Reds)
-    #                 fig2.colorbar(cax2)
-    #                 ax2.set_title('Loss Confusion Matrix')
-    #
-    #                 for j in range(result_summary["L_conf_mat"].shape[0]):
-    #                     for k in range(result_summary["L_conf_mat"].shape[1]):
-    #                         c = result_summary["L_conf_mat"][j,k]
-    #                         ax2.text(k, j, str(c), va='center', ha='center')
-    #
-    #                 wandb.log({
-    #                     "Summary/success_confusion_matrix": wandb.Image(fig1),
-    #                     "Summary/loss_confusion_matrix": wandb.Image(fig2),
-    #                     "Summary/task_step": i,
-    #                     "Summary/eval_loss_time": (t2-t1)/60,
-    #                     "Summary/eval_success_time": (t3-t2)/60,
-    #                     f"Summary/task_{i}_losses": wandb.Histogram(L, num_bins=len(L)),
-    #                     f"Summary/task_{i}_success_rates": wandb.Histogram(S, num_bins=len(S)),
-    #                 })
-    #
-    #                 plt.close(fig1)
-    #                 plt.close(fig2)
-    #
-    #                 wandb.run.summary["success_confusion_matrix"] = result_summary[
-    #                     "S_conf_mat"
-    #                 ]
-    #                 wandb.run.summary["loss_confusion_matrix"] = result_summary[
-    #                     "L_conf_mat"
-    #                 ]
-    #                 wandb.run.summary["fwd_transfer_success"] = result_summary["S_fwd"]
-    #                 wandb.run.summary["fwd_transfer_loss"] = result_summary["L_fwd"]
-    #                 # wandb.run.summary.update() # this is not needed in training
-    #
-    #
-    #             print(
-    #                 f"[info] train time (min) {(t1-t0)/60:.1f} "
-    #                 + f"eval loss time {(t2-t1)/60:.1f} "
-    #                 + f"eval success time {(t3-t2)/60:.1f}"
-    #             )
-    #             print(("[Task %2d loss ] " + " %4.2f |" * (i + 1)) % (i, *L))
-    #             print(("[Task %2d succ.] " + " %4.2f |" * (i + 1)) % (i, *S))
-    #             torch.save(
-    #                 result_summary, os.path.join(cfg.experiment_dir, f"result.pt")
-    #             )
-    #
+    else:
+        for i in range(n_tasks):
+            print(f"[info] start training on task {i}")
+            algo.train()
+
+            t0 = time.time()
+            s_fwd, l_fwd = algo.learn_one_task(
+                datasets[i], i, benchmark, result_summary, cfg.use_wandb
+            )
+            result_summary["S_fwd"][i] = s_fwd
+            result_summary["L_fwd"][i] = l_fwd
+            t1 = time.time()
+
+            # if cfg.use_wandb:
+            #     fig1, ax1 = plt.subplots()
+            #     bars1 = ax1.bar(np.arange(len(result_summary["S_fwd"])), result_summary["S_fwd"])
+            #     ax1.set_title('Forward Transfer Success')
+            #
+            #     for bar in bars1:
+            #         yval = bar.get_height()
+            #         ax1.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
+            #
+            #     fig2, ax2 = plt.subplots()
+            #     bars2 = ax2.bar(np.arange(len(result_summary["L_fwd"])), result_summary["L_fwd"])
+            #     ax2.set_title('Forward Transfer Loss')
+            #
+            #     for bar in bars2:
+            #         yval = bar.get_height()
+            #         ax2.text(bar.get_x() + bar.get_width() / 2, yval, round(yval, 2), va='bottom')
+            #
+            #     wandb.log({
+            #         "Summary/fwd_transfer_success": wandb.Image(fig1),
+            #         "Summary/fwd_transfer_loss": wandb.Image(fig2),
+            #         "Summary/task_step": i,
+            #         "Summary/train_time": (t1-t0)/60,
+            #     })
+            #
+            #     plt.close(fig1)
+            #     plt.close(fig2)
+
+
+            # evalute on all seen tasks at the end of learning each task
+            if cfg.eval.eval:
+                L = evaluate_loss(cfg, algo, benchmark, datasets[: i + 1])
+                t2 = time.time()
+                S = evaluate_success(
+                    cfg=cfg,
+                    algo=algo,
+                    benchmark=benchmark,
+                    task_ids=list(range((i + 1) * gsz)),
+                    result_summary=result_summary if cfg.eval.save_sim_states else None,
+                )
+                t3 = time.time()
+                result_summary["L_conf_mat"][i][: i + 1] = L
+                result_summary["S_conf_mat"][i][: i + 1] = S
+
+                # if cfg.use_wandb:
+                #     fig1, ax1 = plt.subplots()
+                #     cax1 = ax1.matshow(result_summary["S_conf_mat"], cmap=plt.cm.Blues)
+                #     fig1.colorbar(cax1)
+                #     ax1.set_title('Success Confusion Matrix')
+                #
+                #     for j in range(result_summary["S_conf_mat"].shape[0]):
+                #         for k in range(result_summary["S_conf_mat"].shape[1]):
+                #             c = result_summary["S_conf_mat"][j,k]
+                #             ax1.text(k, j, str(c), va='center', ha='center')
+                #
+                #     fig2, ax2 = plt.subplots()
+                #     cax2 = ax2.matshow(result_summary["L_conf_mat"], cmap=plt.cm.Reds)
+                #     fig2.colorbar(cax2)
+                #     ax2.set_title('Loss Confusion Matrix')
+                #
+                #     for j in range(result_summary["L_conf_mat"].shape[0]):
+                #         for k in range(result_summary["L_conf_mat"].shape[1]):
+                #             c = result_summary["L_conf_mat"][j,k]
+                #             ax2.text(k, j, str(c), va='center', ha='center')
+                #
+                #     wandb.log({
+                #         "Summary/success_confusion_matrix": wandb.Image(fig1),
+                #         "Summary/loss_confusion_matrix": wandb.Image(fig2),
+                #         "Summary/task_step": i,
+                #         "Summary/eval_loss_time": (t2-t1)/60,
+                #         "Summary/eval_success_time": (t3-t2)/60,
+                #         f"Summary/task_{i}_losses": wandb.Histogram(L, num_bins=len(L)),
+                #         f"Summary/task_{i}_success_rates": wandb.Histogram(S, num_bins=len(S)),
+                #     })
+                #
+                #     plt.close(fig1)
+                #     plt.close(fig2)
+                #
+                #     wandb.run.summary["success_confusion_matrix"] = result_summary[
+                #         "S_conf_mat"
+                #     ]
+                #     wandb.run.summary["loss_confusion_matrix"] = result_summary[
+                #         "L_conf_mat"
+                #     ]
+                #     wandb.run.summary["fwd_transfer_success"] = result_summary["S_fwd"]
+                #     wandb.run.summary["fwd_transfer_loss"] = result_summary["L_fwd"]
+                #     # wandb.run.summary.update() # this is not needed in training
+
+
+                print(
+                    f"[info] train time (min) {(t1-t0)/60:.1f} "
+                    + f"eval loss time {(t2-t1)/60:.1f} "
+                    + f"eval success time {(t3-t2)/60:.1f}"
+                )
+                print(("[Task %2d loss ] " + " %4.2f |" * (i + 1)) % (i, *L))
+                print(("[Task %2d succ.] " + " %4.2f |" * (i + 1)) % (i, *S))
+                torch.save(
+                    result_summary, os.path.join(cfg.experiment_dir, f"result.pt")
+                )
+
     print("[info] finished learning\n")
     # if cfg.use_wandb:
     #     wandb.finish()
