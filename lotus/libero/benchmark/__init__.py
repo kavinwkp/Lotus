@@ -83,6 +83,15 @@ for libero_suite in libero_suites:
         # print(language, "\n", f"{task}.bddl", "\n")
         # print("")
 
+task_maps["real_10"] = {}
+task_maps["real_10"]["pickup_cube"] = Task(
+            name="pickup_cube",
+            language="pickup cube",
+            problem="real_10",
+            problem_folder="real_10",
+            bddl_file=None,
+            init_states_file=None,
+        )
 
 task_orders = [
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -214,6 +223,24 @@ class LIBERO_10(Benchmark):
         self.name = "libero_10"
         self._make_benchmark()
 
+@register_benchmark
+class REAL_10(Benchmark):
+    def __init__(self, task_order_index=0):
+        super().__init__(task_order_index=task_order_index)
+        self.name = "real_10"
+        self._make_benchmark()
+
+    def _make_benchmark(self):
+
+        custom_task_order = [0]
+        tasks = list(task_maps[self.name].values())
+        if self.name == "libero_90":
+            self.tasks = tasks
+        else:
+            print(f"[info] using task orders {custom_task_order}")
+            self.tasks = [tasks[i] for i in custom_task_order]
+        self.n_tasks = len(self.tasks)
+        self.new_task_name = "@real@"
 
 @register_benchmark
 class LIBERO_100(Benchmark):

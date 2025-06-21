@@ -1,0 +1,2 @@
+algo: DiffusionTask
+eval_in_train: false
