@@ -10,7 +10,7 @@ input_files = [
     if f.startswith("episode") and f.endswith(".hdf5")
 ]
 
-# input_files.sort()
+input_files.sort()
 print(input_files)
 
 with h5py.File(output_file, 'w') as out_f:
