@@ -165,15 +165,15 @@ class DiffusionTask(Sequential):
 
         # return the metrics regarding forward transfer
         losses = np.array(losses)   # 每次评估的所有任务的平均损失
-        # successes = np.array(successes)  # 每次评估的所有任务的平均成功率 [0.   , 0.725, 0.81 , 0.77 , 0.775, 0.785, 0.75 , 0.81 , 0.745, 0.78 , 0.745]
-        # all_eval_successes = np.array(all_eval_successes)   # 每次评估的每个任务的成功率 是一个矩阵
+        successes = np.array(successes)  # 每次评估的所有任务的平均成功率 [0.   , 0.725, 0.81 , 0.77 , 0.775, 0.785, 0.75 , 0.81 , 0.745, 0.78 , 0.745]
+        all_eval_successes = np.array(all_eval_successes)   # 每次评估的每个任务的成功率 是一个矩阵
 
         auc_checkpoint_name = os.path.join(self.experiment_dir, f"multitask_auc.log")
         torch.save(
             {
-                # "success": successes,
+                "success": successes,
                 "loss": losses,
-                # "all_eval_successes": all_eval_successes,
+                "all_eval_successes": all_eval_successes,
             },
             auc_checkpoint_name,
         )
