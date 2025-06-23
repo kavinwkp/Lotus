@@ -1,6 +1,6 @@
 import h5py
 import os
-
+import numpy as np
 
 input_dir = "lotus/datasets/real_10"
 output_file = "lotus/datasets/real_10/pickup_cube_demo.hdf5"
@@ -23,6 +23,8 @@ with h5py.File(output_file, 'w') as out_f:
 
         with h5py.File(filepath, 'r') as in_f:
             actions = in_f['action'][:]
+            for i in range(6):
+                actions[:, i] = (actions[:, i] + np.pi) / (2 * np.pi)
             # print(actions.shape)
             eye_in_hand_rgb = in_f["observations"]["images"]["right"][:]
             # print(eye_in_hand_rgb.shape)
