@@ -101,30 +101,30 @@ class DiffusionTask(Sequential):
                 # the agent once every eval_every epochs on all tasks, note that
                 # this can be quite computationally expensive. Nevertheless, we
                 # save the checkpoints, so users can always evaluate afterwards.
-                # if self.cfg.lifelong.eval_in_train:
-                #     success_rates = evaluate_multitask_training_success(
-                #         self.cfg, self, benchmark, all_tasks
-                #     )   # 每个任务的成功率
-                #     success_rate = np.mean(success_rates)   # 所有任务的平均成功率
-                #     print("success_rates: ", success_rates)
-                #     print("average success_rates: ", success_rate)
-                # else:
-                #     success_rates = np.zeros(len(all_tasks))
-                #     success_rate = 0.0
-                # successes.append(success_rate)
-                # all_eval_successes.append(success_rates)
-                #
-                # if prev_success_rate < success_rate:
-                #     torch_save_model(self.policy, model_checkpoint_name, cfg=self.cfg)
-                #     prev_success_rate = success_rate
-                #     idx_at_best_succ = len(losses) - 1
-                #
-                # t1 = time.time()
-                #
-                # cumulated_counter += 1.0
-                # ci = confidence_interval(success_rate, self.cfg.eval.n_eval)
-                # tmp_successes = np.array(successes)
-                # tmp_successes[idx_at_best_succ:] = successes[idx_at_best_succ]
+                if self.cfg.lifelong.eval_in_train:
+                    success_rates = evaluate_multitask_training_success(
+                        self.cfg, self, benchmark, all_tasks
+                    )   # 每个任务的成功率
+                    success_rate = np.mean(success_rates)   # 所有任务的平均成功率
+                    print("success_rates: ", success_rates)
+                    print("average success_rates: ", success_rate)
+                else:
+                    success_rates = np.zeros(len(all_tasks))
+                    success_rate = 0.0
+                successes.append(success_rate)
+                all_eval_successes.append(success_rates)
+
+                if prev_success_rate < success_rate:
+                    torch_save_model(self.policy, model_checkpoint_name, cfg=self.cfg)
+                    prev_success_rate = success_rate
+                    idx_at_best_succ = len(losses) - 1
+
+                t1 = time.time()
+
+                cumulated_counter += 1.0
+                ci = confidence_interval(success_rate, self.cfg.eval.n_eval)
+                tmp_successes = np.array(successes)
+                tmp_successes[idx_at_best_succ:] = successes[idx_at_best_succ]
 
                 # if self.cfg.lifelong.eval_in_train:
                 #     print(
