@@ -570,55 +570,66 @@ class BCTransformerMoEPolicy(BasePolicy):
             policy_cfg.temporal_position_encoding.network
         )(**policy_cfg.temporal_position_encoding.network_kwargs)   # SinusoidalPositionEncoding
 
-        # self.temporal_transformer = TransformerDecoder(
-        #     input_size=embed_size,
-        #     num_layers=policy_cfg.transformer_num_layers,
-        #     num_heads=policy_cfg.transformer_num_heads,
-        #     head_output_size=policy_cfg.transformer_head_output_size,
-        #     mlp_hidden_size=policy_cfg.transformer_mlp_hidden_size,
-        #     dropout=policy_cfg.transformer_dropout,
-        # )
-
-        ## TODO: replace to Moe transformer
-        self.is_multigate = policy_cfg.is_multigate
-        self.temporal_transformer = MoeTransformerDecoder(
+        self.temporal_transformer = TransformerDecoder(
             input_size=embed_size,
             num_layers=policy_cfg.transformer_num_layers,
             num_heads=policy_cfg.transformer_num_heads,
             head_output_size=policy_cfg.transformer_head_output_size,
-            num_experts=policy_cfg.num_experts,
-            top_k=policy_cfg.top_k,
+            mlp_hidden_size=policy_cfg.transformer_mlp_hidden_size,
             dropout=policy_cfg.transformer_dropout,
-            is_multigate=self.is_multigate
         )
+
+        ## TODO: replace to Moe transformer
+        # self.is_multigate = policy_cfg.is_multigate
+        # self.temporal_transformer = MoeTransformerDecoder(
+        #     input_size=embed_size,
+        #     num_layers=policy_cfg.transformer_num_layers,
+        #     num_heads=policy_cfg.transformer_num_heads,
+        #     head_output_size=policy_cfg.transformer_head_output_size,
+        #     num_experts=policy_cfg.num_experts,
+        #     top_k=policy_cfg.top_k,
+        #     dropout=policy_cfg.transformer_dropout,
+        #     is_multigate=self.is_multigate
+        # )
 
         policy_head_kwargs = policy_cfg.policy_head.network_kwargs
         policy_head_kwargs.input_size = embed_size
         policy_head_kwargs.output_size = shape_meta["ac_dim"]
 
-        self.policy_head = eval(policy_cfg.policy_head.network)(
-            **policy_cfg.policy_head.loss_kwargs,
-            **policy_cfg.policy_head.network_kwargs
-        )   # GMMHead (64->7)
+        # self.policy_head = eval(policy_cfg.policy_head.network)(
+        #     **policy_cfg.policy_head.loss_kwargs,
+        #     **policy_cfg.policy_head.network_kwargs
+        # )   # GMMHead (64->7)
 
         # self.policy_head = nn.Linear(embed_size, shape_meta["ac_dim"])
+
+        self.num_queries = 10
+        self.step = 0
+
+        self.policy_head = nn.Linear(embed_size, shape_meta["ac_dim"] * self.num_queries)
+
+        # self.temporal_agg = True
+        self.temporal_agg = policy_cfg.temporal_agg
+        if self.temporal_agg:
+            self.all_time_actions = torch.zeros((20, 600, 600 + self.num_queries, shape_meta["ac_dim"])).to(cfg.device)
 
         self.latent_queue = []
         self.max_seq_len = policy_cfg.transformer_max_seq_len   # 10
 
-    def temporal_encode(self, x, task_id=None):
+    def temporal_encode(self, x):
         pos_emb = self.temporal_position_encoding_fn(x)     # (1, 64)
         x = x + pos_emb.unsqueeze(1)  # (B, T, num_modality, E)
         sh = x.shape
         self.temporal_transformer.compute_mask(x.shape)
 
         x = TensorUtils.join_dimensions(x, 1, 2)  # (B, T*num_modality, E)
-        x, aux_loss = self.temporal_transformer(x, task_id)
+        x = self.temporal_transformer(x)
+        # x, aux_loss = self.temporal_transformer(x, task_id)
         x = x.reshape(*sh)
-        if self.training:
-            return x[:, :, 0], aux_loss  # (B, T, E)
-        else:
-            return x[:, :, 0]
+        # if self.training:
+        #     return x[:, :, 0], aux_loss  # (B, T, E)
+        # else:
+        return x[:, :, 0]
 
     def spatial_encode(self, data):
         # 1. encode extra
@@ -649,44 +660,71 @@ class BCTransformerMoEPolicy(BasePolicy):
 
     def forward(self, data):
         x = self.spatial_encode(data)
-        if self.is_multigate:
-            x, aux_loss = self.temporal_encode(x, data["task_id"])
-        else:
-            x, aux_loss = self.temporal_encode(x)
-        dist = self.policy_head(x)
-        if self.training:
-            return dist, aux_loss
-        else:
-            return dist
+        x = self.temporal_encode(x)
+        action = self.policy_head(x).reshape(x.shape[0], self.num_queries, -1)  # (bs,1,70) -> (bs,10,7)
+        return action
+        # if self.is_multigate:
+        #     x, aux_loss = self.temporal_encode(x, data["task_id"])
+        # else:
+        #     x, aux_loss = self.temporal_encode(x)
+        # dist = self.policy_head(x)
+        # if self.training:
+        #     return dist, aux_loss
+        # else:
+        #     return dist
 
     def get_action(self, data):
         self.eval()
         with torch.no_grad():
-            # print(data["obs"]["agentview_rgb"].shape)   # train policy: (20, 3, 128, 128) , train meta: (20, 1, 3, 128, 128) no need to squeeze(1)
-            if data["obs"]["agentview_rgb"].shape[1] != 1:
-                data = self.preprocess_input(data, train_mode=False)
-            # print(data["obs"]["agentview_rgb"].shape)     # (20, 1, 3, 128, 128)
+            data = self.preprocess_input(data, train_mode=False)
             x = self.spatial_encode(data)   # (20, 1, 5, 64)
-            self.latent_queue.append(x)
-            if len(self.latent_queue) > self.max_seq_len:
-                self.latent_queue.pop(0)
-            x = torch.cat(self.latent_queue, dim=1)  # (B, T, H_all)    (20, 10, 5, 64)
-            if self.is_multigate:
-                x = self.temporal_encode(x, data["task_id"])     # (20, 10, 64)
-            else:
-                x = self.temporal_encode(x)     # (20, 10, 64)
-            dist = self.policy_head(x[:, -1])   # (20, 64) -> (20, 7)
-        action = dist.sample().detach().cpu()   # (20, 7)
-        return action.view(action.shape[0], -1).numpy()
+            # self.latent_queue.append(x)
+            # if len(self.latent_queue) > self.max_seq_len:
+            #     self.latent_queue.pop(0)
+            # x = torch.cat(self.latent_queue, dim=1)  # (B, T, H_all)    (20, 10, 5, 64)
+            x = self.temporal_encode(x)
+            action = self.policy_head(x).reshape(x.shape[0], self.num_queries, -1)  # (bs, 10, 7)
+        #     if self.is_multigate:
+        #         x = self.temporal_encode(x, data["task_id"])     # (20, 10, 64)
+        #     else:
+        #         x = self.temporal_encode(x)     # (20, 10, 64)
+        #     dist = self.policy_head(x[:, -1])   # (20, 64) -> (20, 7)
+        # action = dist.sample().detach().cpu()   # (20, 7)
+        # return action.view(action.shape[0], -1).numpy()
+        if self.temporal_agg:   # eval
+            bs = action.shape[0]
+            actions = []
+            for i in range(bs):
+                self.all_time_actions[i, [self.step], self.step: self.step + self.num_queries] = action[[i]]
+                actions_for_curr_step = self.all_time_actions[i, :, self.step]
+                actions_populated = torch.all(actions_for_curr_step != 0, axis=1)
+                actions_for_curr_step = actions_for_curr_step[actions_populated]
+                k = 0.01
+                exp_weights = np.exp(-k * np.arange(len(actions_for_curr_step)))
+                exp_weights = exp_weights / exp_weights.sum()
+                exp_weights = torch.from_numpy(exp_weights).cuda().unsqueeze(dim=1)
+                action_chunk = (actions_for_curr_step * exp_weights).sum(dim=0, keepdim=True)  # (bs, 7)
+                actions.append(action_chunk)
+            actions = torch.cat(actions, dim=0)
+            self.step += 1
+            return actions.detach().cpu().numpy()  # (bs, 7)
+        else:
+            return action.detach().cpu().numpy()[:, 0]
 
     def reset(self):
         self.latent_queue = []
+        self.step = 0
+        if self.temporal_agg:
+            self.all_time_actions.zero_()
 
     def compute_loss(self, data, reduction="mean"):
         data = self.preprocess_input(data, train_mode=True)
-        dist, aux_loss = self.forward(data)
-        loss = self.policy_head.loss_fn(dist, data["actions"], reduction)
-        return loss, aux_loss
+        # dist, aux_loss = self.forward(data)
+        # loss = self.policy_head.loss_fn(dist, data["actions"], reduction)
+        # return loss, aux_loss
+        dist = self.forward(data)
+        loss = F.l1_loss(dist, data["actions"], reduction=reduction)
+        return loss
 
 class BCTransformerSkillPolicy(BasePolicy):
     """

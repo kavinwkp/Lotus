@@ -22,25 +22,25 @@ class Moetask(Sequential):
     def __init__(self, n_tasks, cfg, **policy_kwargs):
         super().__init__(n_tasks=n_tasks, cfg=cfg, **policy_kwargs)
 
-    def observe(self, data):
-        """
-        How the algorithm learns on each data point.
-        """
-        data = self.map_tensor_to_device(data)
-        self.optimizer.zero_grad()
-        loss, aux_loss = self.policy.compute_loss(data)
-
-        alpha = 1
-        loss = loss + alpha * aux_loss
-        # loss = loss
-
-        (self.loss_scale * loss).backward()
-        if self.cfg.train.grad_clip is not None:
-            grad_norm = nn.utils.clip_grad_norm_(
-                self.policy.parameters(), self.cfg.train.grad_clip
-            )
-        self.optimizer.step()
-        return loss.item(), aux_loss.item()
+    # def observe(self, data):
+    #     """
+    #     How the algorithm learns on each data point.
+    #     """
+    #     data = self.map_tensor_to_device(data)
+    #     self.optimizer.zero_grad()
+    #     loss, aux_loss = self.policy.compute_loss(data)
+    #
+    #     alpha = 0.1
+    #     loss = loss + alpha * aux_loss
+    #     # loss = loss
+    #
+    #     (self.loss_scale * loss).backward()
+    #     if self.cfg.train.grad_clip is not None:
+    #         grad_norm = nn.utils.clip_grad_norm_(
+    #             self.policy.parameters(), self.cfg.train.grad_clip
+    #         )
+    #     self.optimizer.step()
+    #     return loss.item(), aux_loss.item()
 
     def learn_multi_task(self, datasets, benchmark, use_wandb):
         self.start_task(-1)
@@ -73,27 +73,27 @@ class Moetask(Sequential):
         for epoch in range(1, self.cfg.train.n_epochs + 1):
 
             t0 = time.time()
-            # if epoch > 0:  # update
+
             self.policy.train()
             training_loss = 0.0
-            aux_loss = 0.0
+            # aux_loss = 0.0
             for (idx, data) in enumerate(train_dataloader):
-                loss, aux_loss = self.observe(data)
+                data["obs"]["agentview_rgb"] = data["obs"]["agentview_rgb"][:, 0:1]
+                data["obs"]["eye_in_hand_rgb"] = data["obs"]["eye_in_hand_rgb"][:, 0:1]
+                data["obs"]["joint_states"] = data["obs"]["joint_states"][:, 0:1]  # (bs, 1, 7)
+                # data["obs"]["gripper_states"] = data["obs"]["gripper_states"][:, 0:1]  # (bs, 1, 2)
+
+                # loss, aux_loss = self.observe(data)
+                loss = self.observe(data)
                 training_loss += loss
-                aux_loss += aux_loss
+                # aux_loss += aux_loss
             training_loss /= len(train_dataloader)
             # aux_loss /= len(train_dataloader)
-            # else:  # just evaluate the zero-shot performance on 0-th epoch
-            #     training_loss = 0.0
-            #     for (idx, data) in enumerate(train_dataloader):
-            #         loss = self.eval_observe(data)
-            #         training_loss += loss
-            #     training_loss /= len(train_dataloader)
+
             t1 = time.time()
 
             print(
-                f"[info] Epoch: {epoch:3d} | train loss: {training_loss:5.2f} | "
-                f"aux loss: {aux_loss:5.2f} | time: {(t1-t0)/60:4.2f}"
+                f"[info] Epoch: {epoch:3d} | train loss: {training_loss:5.4f} | time: {(t1-t0)/60:4.2f}"
             )
 
             if use_wandb:
@@ -103,7 +103,7 @@ class Moetask(Sequential):
                     "Training/step": epoch,
                 })
 
-            if epoch > 30 and epoch % self.cfg.eval.eval_every == 0:  # evaluate BC loss
+            if epoch > 0 and epoch % self.cfg.eval.eval_every == 0:  # evaluate BC loss
                 t0 = time.time()
                 self.policy.eval()
 
@@ -193,9 +193,9 @@ class Moetask(Sequential):
 
         print("best success index: ", idx_at_best_succ)
 
-        if self.cfg.lifelong.eval_in_train:
-            loss_at_best_succ = losses[idx_at_best_succ]
-            success_at_best_succ = successes[idx_at_best_succ]
-            losses[idx_at_best_succ:] = loss_at_best_succ
-            successes[idx_at_best_succ:] = success_at_best_succ
-        return successes.sum() / cumulated_counter, losses.sum() / cumulated_counter
+        # if self.cfg.lifelong.eval_in_train:
+        #     loss_at_best_succ = losses[idx_at_best_succ]
+        #     success_at_best_succ = successes[idx_at_best_succ]
+        #     losses[idx_at_best_succ:] = loss_at_best_succ
+        #     successes[idx_at_best_succ:] = success_at_best_succ
+        # return successes.sum() / cumulated_counter, losses.sum() / cumulated_counter

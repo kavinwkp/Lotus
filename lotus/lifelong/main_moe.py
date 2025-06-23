@@ -47,15 +47,15 @@ from lotus.lifelong.utils import (
 
 
 
-@hydra.main(config_path="../configs", config_name="config", version_base=None)
+@hydra.main(config_path="../configs", config_name="real_config", version_base=None)
 def main(hydra_cfg):
     # preprocessing
     yaml_config = OmegaConf.to_yaml(hydra_cfg, resolve=True)
     cfg = EasyDict(yaml.safe_load(yaml_config))
 
     # print configs to terminal
-    pp = pprint.PrettyPrinter(indent=2)
-    pp.pprint(cfg)
+    # pp = pprint.PrettyPrinter(indent=2)
+    # pp.pprint(cfg)
     #
     # pp.pprint("Available algorithms:")
     # pp.pprint(get_algo_list())
@@ -159,10 +159,13 @@ def main(hydra_cfg):
     moe_policy = safe_device(Moetask(n_tasks, cfg), cfg.device)
     moe_policy.train()
 
+    model_size = sum(p.numel() for p in moe_policy.policy.parameters() if p.requires_grad)
+    print(f"[info] Moe Model size: {model_size / 1e6:.2f}M")
+
     if cfg.pretrain_model_path != "":
         moe_policy.load_model(task_id=-1, experiment_dir=cfg.pretrain_model_path)
 
-    s_fwd, l_fwd = moe_policy.learn_multi_task(datasets, benchmark, cfg.use_wandb)
+    moe_policy.learn_multi_task(datasets, benchmark, cfg.use_wandb)
     # result_summary["L_fwd"][-1] = l_fwd
     # result_summary["S_fwd"][-1] = s_fwd
 
