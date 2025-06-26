@@ -26,9 +26,6 @@ with h5py.File(output_file, 'w') as out_f:
         with h5py.File(filepath, 'r') as in_f:
             actions = in_f['actions'][:]
             # actions_plot.append(actions)
-
-            # for i in range(6):
-            #     actions[:, i] = (actions[:, i] + np.pi) / (2 * np.pi)
             # print(actions.shape)
             eye_in_hand_rgb = in_f["obs"]["images"]["right"][:]
             # print(eye_in_hand_rgb.shape)
