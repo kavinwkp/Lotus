@@ -155,7 +155,7 @@ libero_task_map = {
     #     "STUDY_SCENE4_pick_up_the_book_on_the_right_and_place_it_under_the_cabinet_shelf",
     # ],
     "real_10": [
-        "pickup_cube",
+        "pickup_red_cube_and_banana_into_backet",
     ],
 
     "rw_train_set1": [

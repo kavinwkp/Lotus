@@ -84,9 +84,9 @@ for libero_suite in libero_suites:
         # print("")
 
 task_maps["real_10"] = {}
-task_maps["real_10"]["pickup_cube"] = Task(
-            name="pickup_cube",
-            language="pickup cube",
+task_maps["real_10"]["pickup_red_cube_and_banana_into_backet"] = Task(
+            name="pickup_red_cube_and_banana_into_backet",
+            language="pickup red cube and banana into backet",
             problem="real_10",
             problem_folder="real_10",
             bddl_file=None,
