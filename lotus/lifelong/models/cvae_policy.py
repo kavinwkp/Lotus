@@ -1246,8 +1246,8 @@ class ACILTransformerPolicy(torch.nn.Module):
         shape_meta = cfg.shape_meta
 
         shape_meta["all_shapes"] = {}
-        # shape_meta["all_shapes"]["agentview_rgb"] = [3, 128, 128]
-        shape_meta["all_shapes"]["agentview_rgb"] = [3, 480, 640]   # for real
+        shape_meta["all_shapes"]["agentview_rgb"] = [3, 128, 128]
+        # shape_meta["all_shapes"]["agentview_rgb"] = [3, 480, 640]   # for real
 
         self.skill_policies = skill_policies
         self.num_subtasks = num_subtasks  # 2
@@ -1363,10 +1363,7 @@ class ACILTransformerPolicy(torch.nn.Module):
         self.temporal_transformer.compute_mask(x.shape)
 
         x = TensorUtils.join_dimensions(x, 1, 2)  # (B, T*num_modality, E)
-        if self.trans == "moe":
-            x = self.temporal_transformer(x, task_id)
-        else:
-            x = self.temporal_transformer(x)
+        x = self.temporal_transformer(x)
         x = x.reshape(*sh)
         return x[:, :, 0]  # (B, T, E)
 
@@ -1402,10 +1399,7 @@ class ACILTransformerPolicy(torch.nn.Module):
     def forward(self, data):
         # (B, T, ...)
         x = self.spatial_encode(data)
-        if self.trans == "moe":
-            z_state = self.temporal_encode(x, data["task_id"])  # (B, T, 64)
-        else:
-            z_state = self.temporal_encode(x)  # (B, T, 64)
+        z_state = self.temporal_encode(x)  # (B, T, 64)
         z_state = z_state.reshape(-1, z_state.shape[-1])  # (Batch, 64)
         # skill_id = self.meta_id_layer(z_state)  # (Batch, 20)
         # return skill_id
