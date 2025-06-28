@@ -426,10 +426,381 @@ class MetaCVAEPolicy(torch.nn.Module):
         return action
 
 
+# class ExtraModalityTokens(nn.Module):
+#     def __init__(
+#         self,
+#         use_goal=True,
+#         extra_num_layers=0,
+#         extra_hidden_size=64,
+#         extra_embedding_size=32,
+#     ):
+#         """
+#         This is a class that maps all extra modality inputs into tokens of the same size
+#         """
+#         super().__init__()
+#         self.use_goal = use_goal
+#         self.extra_embedding_size = extra_embedding_size
+#
+#         goal_dim = 7
+#
+#         self.num_extra = int(use_goal)
+#
+#         extra_low_level_feature_dim = (
+#             int(use_goal) * goal_dim
+#         )
+#
+#         assert extra_low_level_feature_dim > 0, "[error] no extra information"
+#
+#         self.extra_encoders = {}
+#
+#         def generate_mlp_fn(modality_name, extra_low_level_feature_dim):
+#             assert extra_low_level_feature_dim > 0  # we indeed have extra information
+#             if extra_num_layers > 0:
+#                 layers = [nn.Linear(extra_low_level_feature_dim, extra_hidden_size)]
+#                 for i in range(1, extra_num_layers):
+#                     layers += [
+#                         nn.Linear(extra_hidden_size, extra_hidden_size),
+#                         nn.ReLU(inplace=True),
+#                     ]
+#                 layers += [nn.Linear(extra_hidden_size, extra_embedding_size)]
+#             else:
+#                 layers = [nn.Linear(extra_low_level_feature_dim, extra_embedding_size)]
+#
+#             self.mlp = nn.Sequential(*layers)
+#             self.extra_encoders[modality_name] = {"encoder": self.mlp}
+#
+#         for (feature_dim, use_modality, modality_name) in [
+#             (goal_dim, self.use_goal, "goal_states"),
+#         ]:
+#
+#             if use_modality:
+#                 generate_mlp_fn(modality_name, feature_dim)
+#
+#         self.encoders = nn.ModuleList(
+#             [x["encoder"] for x in self.extra_encoders.values()]
+#         )
+
+# class MetaCVAETransformerPolicy(torch.nn.Module):
+#     def __init__(self,
+#                  cfg,
+#                  num_subtasks,
+#                  subgoal_embedding_dim,
+#                  id_layer_dims,
+#                  embedding_layer_dims,
+#                  use_eye_in_hand,
+#                  policy_type,
+#                  activation='relu',
+#                  subgoal_type="sigmoid",
+#                  latent_dim=32,
+#                  use_spatial_softmax=False,
+#                  num_kp=64,
+#                  visual_feature_dimension=64,
+#                  separate_id_prediction=False,
+#                  kl_coeff=1.0,
+#                  skill_policies=None,
+#     ):
+#         super().__init__()
+#
+#         # add data augmentation for rgb inputs
+#         self.cfg = cfg
+#         meta_cfg = cfg.meta
+#         shape_meta = cfg.shape_meta
+#
+#         self.skill_policies = skill_policies
+#         self.num_subtasks = num_subtasks
+#         self.subgoal_embedding_dim = subgoal_embedding_dim
+#         self.kl_coeff = kl_coeff
+#         self.freq = cfg.skill_learning.eval.meta_freq
+#
+#
+#         # add data augmentation for rgb inputs
+#         color_aug = eval(meta_cfg.color_aug.network)(
+#             **meta_cfg.color_aug.network_kwargs
+#         )
+#
+#         meta_cfg.translation_aug.network_kwargs["input_shape"] = shape_meta[
+#             "all_shapes"
+#         ][cfg.data.obs.modality.rgb[0]]
+#         translation_aug = eval(meta_cfg.translation_aug.network)(
+#             **meta_cfg.translation_aug.network_kwargs
+#         )
+#         self.img_aug = DataAugGroup((color_aug, translation_aug))
+#
+#
+#         ### 1. encode image
+#         embed_size = meta_cfg.embed_size
+#         transformer_input_sizes = []
+#         self.image_encoders = {}
+#         for name in shape_meta["all_shapes"].keys():
+#             if "rgb" in name or "depth" in name:
+#                 kwargs = meta_cfg.image_encoder.network_kwargs
+#                 kwargs.input_shape = shape_meta["all_shapes"][name]
+#                 kwargs.output_size = embed_size
+#                 kwargs.language_dim = (
+#                     meta_cfg.language_encoder.network_kwargs.input_size
+#                 )
+#                 self.image_encoders[name] = {
+#                     "input_shape": shape_meta["all_shapes"][name],
+#                     "encoder": eval(meta_cfg.image_encoder.network)(**kwargs),
+#                 }
+#
+#         self.encoders = nn.ModuleList(
+#             [x["encoder"] for x in self.image_encoders.values()]
+#         )
+#
+#         ### 2. encode language
+#         meta_cfg.language_encoder.network_kwargs.output_size = embed_size
+#         self.language_encoder = eval(meta_cfg.language_encoder.network)(
+#             **meta_cfg.language_encoder.network_kwargs
+#         )
+#
+#         # ### 3. encode extra information (e.g. gripper, joint_state)
+#         # self.extra_encoder = ExtraModalityTokens(
+#         #     use_goal=True,
+#         #     extra_num_layers=meta_cfg.extra_num_layers,
+#         #     extra_hidden_size=meta_cfg.extra_hidden_size,
+#         #     extra_embedding_size=embed_size,
+#         # )
+#
+#         ### 4. define temporal transformer
+#         meta_cfg.temporal_position_encoding.network_kwargs.input_size = embed_size
+#         self.temporal_position_encoding_fn = eval(
+#             meta_cfg.temporal_position_encoding.network
+#         )(**meta_cfg.temporal_position_encoding.network_kwargs)
+#
+#         self.temporal_transformer = TransformerDecoder(
+#             input_size=embed_size,
+#             num_layers=meta_cfg.transformer_num_layers,
+#             num_heads=meta_cfg.transformer_num_heads,
+#             head_output_size=meta_cfg.transformer_head_output_size,
+#             mlp_hidden_size=meta_cfg.transformer_mlp_hidden_size,
+#             dropout=meta_cfg.transformer_dropout,
+#         )
+#
+#         # policy_head_kwargs = meta_cfg.policy_head.network_kwargs
+#         # policy_head_kwargs.input_size = embed_size
+#         # policy_head_kwargs.output_size = shape_meta["ac_dim"]
+#
+#         # self.policy_head = eval(meta_cfg.policy_head.network)(
+#         #     **meta_cfg.policy_head.loss_kwargs,
+#         #     **meta_cfg.policy_head.network_kwargs
+#         # )
+#
+#         self.latent_queue = []
+#         self.max_seq_len = meta_cfg.transformer_max_seq_len
+#
+#
+#
+#         transformer_output_dim = embed_size # embed_size
+#         if activation == 'relu':
+#             activate_fn = torch.nn.ReLU
+#         elif activation == 'leaky-relu':
+#             activate_fn = torch.nn.LeakyReLU
+#
+#         self.latent_dim = latent_dim
+#         id_input_dim = transformer_output_dim
+#         embedding_input_dim = transformer_output_dim + self.latent_dim
+#         intermediate_state_dim = 256
+#
+#
+#
+#         self.mlp_encoder_layer = torch.nn.Sequential(*[torch.nn.Linear(transformer_output_dim + subgoal_embedding_dim, intermediate_state_dim),
+#                                                        activate_fn(),
+#                                                        torch.nn.Linear(intermediate_state_dim, intermediate_state_dim),
+#                                                        activate_fn(),
+#                                                        torch.nn.Linear(intermediate_state_dim, self.latent_dim * 2)])
+#
+#         self.meta_id_layer = MetaIdLayer(id_input_dim,
+#                                          num_subtasks,
+#                                          max_subtasks_num= 20,# 10,
+#                                          id_layer_dims=id_layer_dims,
+#                                          policy_type=policy_type,
+#                                          subgoal_type=subgoal_type,
+#                                          activation=activation)
+#         self.meta_embedding_layer = MetaEmbeddingLayer(embedding_input_dim,
+#                                                        num_subtasks,
+#                                                        subgoal_embedding_dim,
+#                                                        embedding_layer_dims=embedding_layer_dims,
+#                                                        policy_type=policy_type,
+#                                                        subgoal_type=subgoal_type,
+#                                                        activation=activation)
+#     def temporal_encode(self, x):
+#         pos_emb = self.temporal_position_encoding_fn(x)
+#         x = x + pos_emb.unsqueeze(1)  # (B, T, num_modality, E)
+#         sh = x.shape
+#         self.temporal_transformer.compute_mask(x.shape)
+#
+#         x = TensorUtils.join_dimensions(x, 1, 2)  # (B, T*num_modality, E)
+#         x = self.temporal_transformer(x)
+#         x = x.reshape(*sh)
+#         return x[:, :, 0]  # (B, T, E)
+#
+#     def spatial_encode(self, data):
+#         encoded = []
+#         # # 1. encode extra
+#         # extra = self.extra_encoder(data["obs"])  # (B, T, num_extra, E)
+#
+#         # 3. encode image
+#         for img_name in self.image_encoders.keys():
+#             x = data["obs"][img_name]
+#             B, T, C, H, W = x.shape
+#             img_encoded = self.image_encoders[img_name]["encoder"](
+#                 x.reshape(B * T, C, H, W),
+#                 langs=data["task_emb"]
+#                 .reshape(B, 1, -1)
+#                 .repeat(1, T, 1)
+#                 .reshape(B * T, -1),
+#             ).view(B, T, 1, -1)
+#             encoded.append(img_encoded)
+#
+#         # 2. encode language, treat it as action token
+#         B, T = img_encoded.shape[:2]
+#         text_encoded = self.language_encoder(data)  # (B, E)
+#         text_encoded = text_encoded.view(B, 1, 1, -1).expand(
+#             -1, T, -1, -1
+#         )  # (B, T, 1, E)
+#         encoded.append(text_encoded)
+#
+#         encoded = torch.cat(encoded, -2)  # (B, T, num_modalities, E)
+#         return encoded
+#
+#
+#     def forward(self, data):
+#         # (B, T, ...)
+#         x = self.spatial_encode(data)
+#         z_state = self.temporal_encode(x) # (B, T, 64)
+#         z_state = z_state.reshape(-1, z_state.shape[-1]) # (Batch, 64)
+#         embedding = data['obs']["embedding"].reshape(-1, data['obs']["embedding"].shape[-1]) # (Batch, 64)
+#
+#
+#         h = torch.cat([z_state, embedding], dim=-1) # (Batch, 64 + 64)
+#         h = self.mlp_encoder_layer(h) # (Batch, 128)
+#
+#         mu, logvar = torch.split(h, self.latent_dim, dim=1)
+#         z = self.sampling(mu, logvar) # (Batch, 64)
+#         z_concat = torch.cat([z_state, z], dim=-1) # (Batch, 64 + 64)
+#         skill_id = self.meta_id_layer(z_state) # (Batch, 6)
+#         embedding = self.meta_embedding_layer(z_concat)
+#         return skill_id, embedding, mu, logvar
+#
+#
+#     def predict(self, data):
+#         # (B, T, ...)
+#         x = self.spatial_encode(data)
+#         self.latent_queue.append(x)
+#         if len(self.latent_queue) > self.max_seq_len:
+#             self.latent_queue.pop(0)
+#         x = torch.cat(self.latent_queue, dim=1)  # (B, T, H_all)
+#         B, T = x.shape[:2]
+#         z_state = self.temporal_encode(x)[:,-1]
+#         z = safe_cuda(torch.randn(B, self.latent_dim))
+#
+#         subtask_vector = self.meta_id_layer(z_state)
+#         subtask_id = torch.argmax(subtask_vector, dim=1)
+#         z_concat = [z_state, z]
+#
+#         subgoal_embedding = self.meta_embedding_layer(torch.cat(z_concat, dim=-1))
+#
+#         subtask_id = subtask_id.cpu().detach().numpy()
+#         return {"subtask_id": subtask_id,
+#                 "subtask_vector": subtask_vector,
+#                 "embedding": subgoal_embedding}
+#
+#     def sampling(self, mu, logvar):
+#         std = torch.exp(0.5 * logvar)
+#         eps = torch.randn_like(mu)
+#         return eps * std + mu
+#
+#     def compute_loss(self, data, reduction="mean"):
+#         use_final_state_goal = False #TODO: update this
+#         data = self.preprocess_input(data, train_mode=True)
+#         B, T = data["obs"]["id"].shape[:2]
+#         cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction=reduction)
+#         mse_loss = torch.nn.MSELoss(reduction=reduction)
+#         subtask_id_prediction, subgoal_embedding, mu, logvar = self.forward(data)
+#         subtask_id_prediction = subtask_id_prediction[:, :self.num_subtasks] # masking
+#         # if use_final_state_goal:
+#         #     data_obs_id_final = data["obs"]["id"][:, -1, ...].unsqueeze(1).expand(-1, data["obs"]["id"].shape[1], *data["obs"]["id"].shape[2:])
+#         #     data_obs_embedding_final = data["obs"]["embedding"][:, -1, ...].unsqueeze(1).expand(-1, data["obs"]["embedding"].shape[1], *data["obs"]["embedding"].shape[2:])
+#         #     data_obs_embedding_final = data_obs_embedding_final.reshape(-1, data_obs_embedding_final.shape[-1])
+#         #
+#         #     ce_loss = cross_entropy_loss(subtask_id_prediction.view(-1, self.num_subtasks), data_obs_id_final.contiguous().view(-1))
+#         #     embedding_loss = mse_loss(data_obs_embedding_final, subgoal_embedding)
+#         #     kl_loss = - self.kl_coeff * 400 * torch.mean(0.5 * torch.sum(1 + logvar - logvar.exp() - mu.pow(2), dim=1), dim=0)
+#         # else:
+#         ce_loss = cross_entropy_loss(subtask_id_prediction.view(-1, self.num_subtasks), data["obs"]["id"].view(-1))
+#         data_embedding = data["obs"]["embedding"].reshape(-1, data["obs"]["embedding"].shape[-1])
+#         embedding_loss = mse_loss(data_embedding, subgoal_embedding)
+#         kl_loss = - self.kl_coeff * 400 * torch.mean(0.5 * torch.sum(1 + logvar - logvar.exp() - mu.pow(2), dim=1), dim=0)
+#
+#         loss = ce_loss + embedding_loss + kl_loss
+#
+#         return loss, ce_loss, embedding_loss, kl_loss
+#
+#     def _get_img_tuple(self, data):
+#         img_tuple = tuple(
+#             [data["obs"][img_name] for img_name in self.image_encoders.keys()]
+#         )
+#         return img_tuple
+#
+#     def _get_aug_output_dict(self, out):
+#         img_dict = {
+#             img_name: out[idx]
+#             for idx, img_name in enumerate(self.image_encoders.keys())
+#         }
+#         return img_dict
+#
+#     def preprocess_input(self, data, train_mode=True):
+#         if train_mode:  # apply augmentation
+#             if self.cfg.train.use_augmentation:
+#                 img_tuple = self._get_img_tuple(data)
+#                 aug_out = self._get_aug_output_dict(self.img_aug(img_tuple))
+#                 for img_name in self.image_encoders.keys():
+#                     data["obs"][img_name] = aug_out[img_name]
+#             return data
+#         else:
+#             data = TensorUtils.recursive_dict_list_tuple_apply(
+#                 data, {torch.Tensor: lambda x: x.unsqueeze(dim=1)}  # add time dimension
+#             )
+#             data["task_emb"] = data["task_emb"].squeeze(1)
+#         return data
+#
+#     def reset(self):
+#         """
+#         Clear all "history" of the policy if there exists any.
+#         """
+#         self.latent_queue = []
+#         self.current_subtask_id = 0
+#         self.counter = 0
+#         self.prev_subgoal_embedding = None
+#         for policy in self.skill_policies.values():
+#             policy.reset()
+#
+#     def get_action(self, data):
+#         self.eval()
+#         with torch.no_grad():
+#             data = self.preprocess_input(data, train_mode=False)
+#             # meta_state = {"agentview_rgb": data["obs"]["agentview_rgb"], "task_emb": data["task_emb"]}
+#             if self.counter % self.freq == 0:
+#                 prediction = self.predict(data)
+#                 subtask_id, subgoal_embedding = prediction["subtask_id"][0], prediction["embedding"]
+#                 self.prev_subgoal_embedding = subgoal_embedding
+#                 if self.current_subtask_id != subtask_id:
+#                     self.current_subtask_id = subtask_id
+#                     self.skill_policies[self.current_subtask_id].reset() # reset the subskill Transformer policy
+#             self.counter += 1
+#             data["obs"]["subgoal_embedding"] = self.prev_subgoal_embedding
+#             action = self.skill_policies[self.current_subtask_id].get_action(data)
+#
+#         return action
+
 class ExtraModalityTokens(nn.Module):
     def __init__(
         self,
-        use_goal=True,
+        use_joint=False,
+        use_gripper=False,
+        use_ee=False,
+        goal_modality=None,
         extra_num_layers=0,
         extra_hidden_size=64,
         extra_embedding_size=32,
@@ -438,47 +809,100 @@ class ExtraModalityTokens(nn.Module):
         This is a class that maps all extra modality inputs into tokens of the same size
         """
         super().__init__()
-        self.use_goal = use_goal
+        self.use_joint = use_joint
+        self.use_gripper = use_gripper
+        self.use_ee = use_ee
         self.extra_embedding_size = extra_embedding_size
+        self.goal_modality = goal_modality
+        self.use_goal_state = True if goal_modality in ["ee_states", "joint_states", "dinov2"] else False
 
-        goal_dim = 7
+        joint_states_dim = 7
+        gripper_states_dim = 2
+        ee_dim = 3
+        if goal_modality == "ee_states":
+            goal_dim = 8
+        elif goal_modality == "joint_states":
+            goal_dim = 9
+        elif goal_modality == "dinov2":
+            goal_dim = 768 #1536 # TODO
+        else:
+            goal_dim = 0
 
-        self.num_extra = int(use_goal)
+        self.num_extra = int(use_joint) + int(use_gripper) + int(use_ee) + int(self.use_goal_state)
 
         extra_low_level_feature_dim = (
-            int(use_goal) * goal_dim
+            int(use_joint) * joint_states_dim
+            + int(use_gripper) * gripper_states_dim
+            + int(use_ee) * ee_dim
+            + int(self.use_goal_state) * goal_dim
         )
 
         assert extra_low_level_feature_dim > 0, "[error] no extra information"
 
         self.extra_encoders = {}
 
-        def generate_mlp_fn(modality_name, extra_low_level_feature_dim):
+        def generate_proprio_mlp_fn(modality_name, extra_low_level_feature_dim):
             assert extra_low_level_feature_dim > 0  # we indeed have extra information
             if extra_num_layers > 0:
                 layers = [nn.Linear(extra_low_level_feature_dim, extra_hidden_size)]
-                for i in range(1, extra_num_layers):
-                    layers += [
-                        nn.Linear(extra_hidden_size, extra_hidden_size),
-                        nn.ReLU(inplace=True),
-                    ]
+                if self.goal_modality == "dinov2": # linear projection for dinov2
+                    for i in range(1, extra_num_layers):
+                        layers += [
+                            nn.Linear(extra_hidden_size, extra_hidden_size),
+                        ]
+                else:
+                    for i in range(1, extra_num_layers):
+                        layers += [
+                            nn.Linear(extra_hidden_size, extra_hidden_size),
+                            nn.ReLU(inplace=True),
+                        ]
                 layers += [nn.Linear(extra_hidden_size, extra_embedding_size)]
             else:
                 layers = [nn.Linear(extra_low_level_feature_dim, extra_embedding_size)]
 
-            self.mlp = nn.Sequential(*layers)
-            self.extra_encoders[modality_name] = {"encoder": self.mlp}
+            self.proprio_mlp = nn.Sequential(*layers)
+            self.extra_encoders[modality_name] = {"encoder": self.proprio_mlp}
 
-        for (feature_dim, use_modality, modality_name) in [
-            (goal_dim, self.use_goal, "goal_states"),
+        for (proprio_dim, use_modality, modality_name) in [
+            (joint_states_dim, self.use_joint, "joint_states"),
+            (gripper_states_dim, self.use_gripper, "gripper_states"),
+            (ee_dim, self.use_ee, "ee_states"),
+            (goal_dim, self.use_goal_state, "goal_states"),
         ]:
 
             if use_modality:
-                generate_mlp_fn(modality_name, feature_dim)
+                generate_proprio_mlp_fn(modality_name, proprio_dim)
 
         self.encoders = nn.ModuleList(
             [x["encoder"] for x in self.extra_encoders.values()]
         )
+
+    def forward(self, obs_dict):
+        """
+        obs_dict: {
+            (optional) joint_stats: (B, T, 7),
+            (optional) gripper_states: (B, T, 2),
+            (optional) ee: (B, T, 3)
+        }
+        map above to a latent vector of shape (B, T, H)
+        """
+        tensor_list = []
+
+        for (use_modality, modality_name) in [
+            (self.use_joint, "joint_states"),
+            (self.use_gripper, "gripper_states"),
+            (self.use_ee, "ee_states"),
+        ]:
+
+            if use_modality:
+                tensor_list.append(
+                    self.extra_encoders[modality_name]["encoder"](
+                        obs_dict[modality_name]
+                    )
+                )
+
+        x = torch.stack(tensor_list, dim=-2)
+        return x
 
 class MetaCVAETransformerPolicy(torch.nn.Module):
     def __init__(self,
@@ -507,11 +931,10 @@ class MetaCVAETransformerPolicy(torch.nn.Module):
         shape_meta = cfg.shape_meta
 
         self.skill_policies = skill_policies
-        self.num_subtasks = num_subtasks
-        self.subgoal_embedding_dim = subgoal_embedding_dim
-        self.kl_coeff = kl_coeff
-        self.freq = cfg.skill_learning.eval.meta_freq
-
+        self.num_subtasks = num_subtasks    # 2
+        # self.subgoal_embedding_dim = subgoal_embedding_dim
+        self.kl_coeff = kl_coeff    # 0.01
+        self.freq = cfg.skill_learning.eval.meta_freq   # 80
 
         # add data augmentation for rgb inputs
         color_aug = eval(meta_cfg.color_aug.network)(
@@ -561,6 +984,14 @@ class MetaCVAETransformerPolicy(torch.nn.Module):
         #     extra_hidden_size=meta_cfg.extra_hidden_size,
         #     extra_embedding_size=embed_size,
         # )
+        self.extra_encoder = ExtraModalityTokens(
+            use_joint=True,
+            use_gripper=True,
+            use_ee=False,
+            extra_num_layers=meta_cfg.extra_num_layers,
+            extra_hidden_size=meta_cfg.extra_hidden_size,
+            extra_embedding_size=embed_size,
+        )
 
         ### 4. define temporal transformer
         meta_cfg.temporal_position_encoding.network_kwargs.input_size = embed_size
@@ -568,14 +999,29 @@ class MetaCVAETransformerPolicy(torch.nn.Module):
             meta_cfg.temporal_position_encoding.network
         )(**meta_cfg.temporal_position_encoding.network_kwargs)
 
-        self.temporal_transformer = TransformerDecoder(
-            input_size=embed_size,
-            num_layers=meta_cfg.transformer_num_layers,
-            num_heads=meta_cfg.transformer_num_heads,
-            head_output_size=meta_cfg.transformer_head_output_size,
-            mlp_hidden_size=meta_cfg.transformer_mlp_hidden_size,
-            dropout=meta_cfg.transformer_dropout,
-        )
+
+        self.trans = "moe"
+        # self.trans = "transformer"
+        if self.trans == "moe":
+            self.temporal_transformer = MoeTransformerDecoder(
+                input_size=embed_size,
+                num_layers=meta_cfg.transformer_num_layers,
+                num_heads=meta_cfg.transformer_num_heads,
+                head_output_size=meta_cfg.transformer_head_output_size,
+                num_experts=16,  # 12
+                top_k=4,
+                dropout=meta_cfg.transformer_dropout,
+                is_multigate=True
+            )
+        else:
+            self.temporal_transformer = TransformerDecoder(
+                input_size=embed_size,
+                num_layers=meta_cfg.transformer_num_layers,
+                num_heads=meta_cfg.transformer_num_heads,
+                head_output_size=meta_cfg.transformer_head_output_size,
+                mlp_hidden_size=meta_cfg.transformer_mlp_hidden_size,
+                dropout=meta_cfg.transformer_dropout,
+            )
 
         # policy_head_kwargs = meta_cfg.policy_head.network_kwargs
         # policy_head_kwargs.input_size = embed_size
@@ -587,59 +1033,53 @@ class MetaCVAETransformerPolicy(torch.nn.Module):
         # )
 
         self.latent_queue = []
-        self.max_seq_len = meta_cfg.transformer_max_seq_len
+        # self.max_seq_len = meta_cfg.transformer_max_seq_len
+        self.max_seq_len = cfg.data.meta_seq_len
 
-
-
-        transformer_output_dim = embed_size # embed_size
+        transformer_output_dim = embed_size  # embed_size
         if activation == 'relu':
             activate_fn = torch.nn.ReLU
         elif activation == 'leaky-relu':
             activate_fn = torch.nn.LeakyReLU
-        
+
         self.latent_dim = latent_dim
         id_input_dim = transformer_output_dim
-        embedding_input_dim = transformer_output_dim + self.latent_dim
         intermediate_state_dim = 256
 
-
-        
-        self.mlp_encoder_layer = torch.nn.Sequential(*[torch.nn.Linear(transformer_output_dim + subgoal_embedding_dim, intermediate_state_dim),
-                                                       activate_fn(),
-                                                       torch.nn.Linear(intermediate_state_dim, intermediate_state_dim),
-                                                       activate_fn(),
-                                                       torch.nn.Linear(intermediate_state_dim, self.latent_dim * 2)])
+        # self.mlp_encoder_layer = torch.nn.Sequential(*[torch.nn.Linear(transformer_output_dim, intermediate_state_dim),
+        #                                                activate_fn(),
+        #                                                torch.nn.Linear(intermediate_state_dim, intermediate_state_dim),
+        #                                                activate_fn(),
+        #                                                torch.nn.Linear(intermediate_state_dim, self.latent_dim * 2)])
 
         self.meta_id_layer = MetaIdLayer(id_input_dim,
                                          num_subtasks,
-                                         max_subtasks_num= 20,# 10,
-                                         id_layer_dims=id_layer_dims,
+                                         max_subtasks_num=num_subtasks,# 10,
+                                         id_layer_dims=id_layer_dims,   # [300, 400]
                                          policy_type=policy_type,
                                          subgoal_type=subgoal_type,
                                          activation=activation)
-        self.meta_embedding_layer = MetaEmbeddingLayer(embedding_input_dim,
-                                                       num_subtasks,
-                                                       subgoal_embedding_dim,
-                                                       embedding_layer_dims=embedding_layer_dims,
-                                                       policy_type=policy_type,
-                                                       subgoal_type=subgoal_type,
-                                                       activation=activation)
-    def temporal_encode(self, x):
+
+
+    def temporal_encode(self, x, task_id=None):
         pos_emb = self.temporal_position_encoding_fn(x)
         x = x + pos_emb.unsqueeze(1)  # (B, T, num_modality, E)
         sh = x.shape
         self.temporal_transformer.compute_mask(x.shape)
 
         x = TensorUtils.join_dimensions(x, 1, 2)  # (B, T*num_modality, E)
-        x = self.temporal_transformer(x)
+        if self.trans == "moe":
+            x = self.temporal_transformer(x, task_id)
+        else:
+            x = self.temporal_transformer(x)
         x = x.reshape(*sh)
         return x[:, :, 0]  # (B, T, E)
 
     def spatial_encode(self, data):
         encoded = []
         # # 1. encode extra
-        # extra = self.extra_encoder(data["obs"])  # (B, T, num_extra, E)
-
+        extra = self.extra_encoder(data["obs"])  # (B, T, num_extra, E)
+        encoded.append(extra)
         # 3. encode image
         for img_name in self.image_encoders.keys():
             x = data["obs"][img_name]
@@ -664,25 +1104,16 @@ class MetaCVAETransformerPolicy(torch.nn.Module):
         encoded = torch.cat(encoded, -2)  # (B, T, num_modalities, E)
         return encoded
 
-
     def forward(self, data):
         # (B, T, ...)
         x = self.spatial_encode(data)
-        z_state = self.temporal_encode(x) # (B, T, 64)
-        z_state = z_state.reshape(-1, z_state.shape[-1]) # (Batch, 64)
-        embedding = data['obs']["embedding"].reshape(-1, data['obs']["embedding"].shape[-1]) # (Batch, 64)
-
-        
-        h = torch.cat([z_state, embedding], dim=-1) # (Batch, 64 + 64)
-        h = self.mlp_encoder_layer(h) # (Batch, 128)
-
-        mu, logvar = torch.split(h, self.latent_dim, dim=1)
-        z = self.sampling(mu, logvar) # (Batch, 64)
-        z_concat = torch.cat([z_state, z], dim=-1) # (Batch, 64 + 64)
-        skill_id = self.meta_id_layer(z_state) # (Batch, 6)
-        embedding = self.meta_embedding_layer(z_concat)
-        return skill_id, embedding, mu, logvar
-
+        if self.trans == "moe":
+            z_state = self.temporal_encode(x, data["task_id"])  # (B, T, 64)
+        else:
+            z_state = self.temporal_encode(x)  # (B, T, 64)
+        z_state = z_state.reshape(-1, z_state.shape[-1])  # (Batch, 64)
+        skill_id = self.meta_id_layer(z_state)  # (Batch, 20)
+        return skill_id
 
     def predict(self, data):
         # (B, T, ...)
@@ -692,50 +1123,31 @@ class MetaCVAETransformerPolicy(torch.nn.Module):
             self.latent_queue.pop(0)
         x = torch.cat(self.latent_queue, dim=1)  # (B, T, H_all)
         B, T = x.shape[:2]
-        z_state = self.temporal_encode(x)[:,-1]
-        z = safe_cuda(torch.randn(B, self.latent_dim))
+        if self.trans == "moe":
+            z_state = self.temporal_encode(x, data["task_id"])[:, -1]
+        else:
+            z_state = self.temporal_encode(x)[:, -1]
+
 
         subtask_vector = self.meta_id_layer(z_state)
+        # print(subtask_vector.shape)   # (bs, 10)
         subtask_id = torch.argmax(subtask_vector, dim=1)
-        z_concat = [z_state, z]
-
-        subgoal_embedding = self.meta_embedding_layer(torch.cat(z_concat, dim=-1))
-
+        # print(subtask_id.shape)   # (bs,)
         subtask_id = subtask_id.cpu().detach().numpy()
-        return {"subtask_id": subtask_id,
-                "subtask_vector": subtask_vector,
-                "embedding": subgoal_embedding}
 
-    def sampling(self, mu, logvar):
-        std = torch.exp(0.5 * logvar)
-        eps = torch.randn_like(mu)
-        return eps * std + mu
-    
+        return {"subtask_id": subtask_id}
+
+
     def compute_loss(self, data, reduction="mean"):
-        use_final_state_goal = False #TODO: update this   
         data = self.preprocess_input(data, train_mode=True)
-        B, T = data["obs"]["id"].shape[:2]
         cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction=reduction)
-        mse_loss = torch.nn.MSELoss(reduction=reduction)
-        subtask_id_prediction, subgoal_embedding, mu, logvar = self.forward(data)
-        subtask_id_prediction = subtask_id_prediction[:, :self.num_subtasks] # masking  
-        if use_final_state_goal:
-            data_obs_id_final = data["obs"]["id"][:, -1, ...].unsqueeze(1).expand(-1, data["obs"]["id"].shape[1], *data["obs"]["id"].shape[2:])
-            data_obs_embedding_final = data["obs"]["embedding"][:, -1, ...].unsqueeze(1).expand(-1, data["obs"]["embedding"].shape[1], *data["obs"]["embedding"].shape[2:])
-            data_obs_embedding_final = data_obs_embedding_final.reshape(-1, data_obs_embedding_final.shape[-1])
+        subtask_id_prediction = self.forward(data)
+        subtask_id_prediction = subtask_id_prediction[:, :self.num_subtasks]  # masking (32, 2)
+        # print(subtask_id_prediction.shape)
 
-            ce_loss = cross_entropy_loss(subtask_id_prediction.view(-1, self.num_subtasks), data_obs_id_final.contiguous().view(-1))
-            embedding_loss = mse_loss(data_obs_embedding_final, subgoal_embedding)
-            kl_loss = - self.kl_coeff * 400 * torch.mean(0.5 * torch.sum(1 + logvar - logvar.exp() - mu.pow(2), dim=1), dim=0)
-        else:
-            ce_loss = cross_entropy_loss(subtask_id_prediction.view(-1, self.num_subtasks), data["obs"]["id"].view(-1))
-            data_embedding = data["obs"]["embedding"].reshape(-1, data["obs"]["embedding"].shape[-1])
-            embedding_loss = mse_loss(data_embedding, subgoal_embedding)
-            kl_loss = - self.kl_coeff * 400 * torch.mean(0.5 * torch.sum(1 + logvar - logvar.exp() - mu.pow(2), dim=1), dim=0)
+        loss = cross_entropy_loss(subtask_id_prediction.view(-1, self.num_subtasks), data["obs"]["id"].view(-1))    # (32,)
 
-        loss = ce_loss + embedding_loss + kl_loss
-
-        return loss, ce_loss, embedding_loss, kl_loss
+        return loss
 
     def _get_img_tuple(self, data):
         img_tuple = tuple(
@@ -763,8 +1175,10 @@ class MetaCVAETransformerPolicy(torch.nn.Module):
                 data, {torch.Tensor: lambda x: x.unsqueeze(dim=1)}  # add time dimension
             )
             data["task_emb"] = data["task_emb"].squeeze(1)
+            if "task_id" in data:
+                data["task_id"] = data["task_id"].squeeze(1)
         return data
-    
+
     def reset(self):
         """
         Clear all "history" of the policy if there exists any.
@@ -775,21 +1189,298 @@ class MetaCVAETransformerPolicy(torch.nn.Module):
         self.prev_subgoal_embedding = None
         for policy in self.skill_policies.values():
             policy.reset()
-    
+
     def get_action(self, data):
         self.eval()
         with torch.no_grad():
             data = self.preprocess_input(data, train_mode=False)
-            # meta_state = {"agentview_rgb": data["obs"]["agentview_rgb"], "task_emb": data["task_emb"]}
-            if self.counter % self.freq == 0:
-                prediction = self.predict(data)
-                subtask_id, subgoal_embedding = prediction["subtask_id"][0], prediction["embedding"]
-                self.prev_subgoal_embedding = subgoal_embedding
+            # if self.counter % self.freq == 0:
+            if self.counter % 10 == 0:
+                predict = self.predict(data)["subtask_id"]
+                # print(predict)
+                subtask_id = predict[0]
+
+                # if self.counter < 250:
+                #     subtask_id_set = 0
+                # else:
+                #     subtask_id_set = 0
+                #
+                # print(subtask_id_set)
+                #
+                # if self.current_subtask_id != subtask_id_set:
+                #     self.current_subtask_id = subtask_id_set
                 if self.current_subtask_id != subtask_id:
                     self.current_subtask_id = subtask_id
-                    self.skill_policies[self.current_subtask_id].reset() # reset the subskill Transformer policy
+                    self.skill_policies[self.current_subtask_id].reset()  # reset the subskill Transformer policy
             self.counter += 1
-            data["obs"]["subgoal_embedding"] = self.prev_subgoal_embedding
+            data["task_id"] = self.current_subtask_id    # (bs,)
             action = self.skill_policies[self.current_subtask_id].get_action(data)
 
         return action
+
+
+class ACILTransformerPolicy(torch.nn.Module):
+    def __init__(self,
+                 cfg,
+                 num_subtasks,
+                 subgoal_embedding_dim,
+                 id_layer_dims,
+                 embedding_layer_dims,
+                 use_eye_in_hand,
+                 policy_type,
+                 activation='relu',
+                 subgoal_type="sigmoid",
+                 latent_dim=32,
+                 use_spatial_softmax=False,
+                 num_kp=64,
+                 visual_feature_dimension=64,
+                 separate_id_prediction=False,
+                 kl_coeff=1.0,
+                 skill_policies=None,
+                 ):
+        super().__init__()
+
+        # add data augmentation for rgb inputs
+        self.cfg = cfg
+        meta_cfg = cfg.meta
+        shape_meta = cfg.shape_meta
+
+        shape_meta["all_shapes"] = {}
+        # shape_meta["all_shapes"]["agentview_rgb"] = [3, 128, 128]
+        shape_meta["all_shapes"]["agentview_rgb"] = [3, 480, 640]   # for real
+
+        self.skill_policies = skill_policies
+        self.num_subtasks = num_subtasks  # 2
+        # self.subgoal_embedding_dim = subgoal_embedding_dim
+        self.kl_coeff = kl_coeff  # 0.01
+        self.freq = cfg.skill_learning.eval.meta_freq  # 80
+
+        # add data augmentation for rgb inputs
+        color_aug = eval(meta_cfg.color_aug.network)(
+            **meta_cfg.color_aug.network_kwargs
+        )
+
+        meta_cfg.translation_aug.network_kwargs["input_shape"] = shape_meta[
+            "all_shapes"
+        ][cfg.data.obs.modality.rgb[0]]
+        translation_aug = eval(meta_cfg.translation_aug.network)(
+            **meta_cfg.translation_aug.network_kwargs
+        )
+        self.img_aug = DataAugGroup((color_aug, translation_aug))
+
+        ### 1. encode image
+        embed_size = meta_cfg.embed_size
+        transformer_input_sizes = []
+        self.image_encoders = {}
+        for name in shape_meta["all_shapes"].keys():
+            if "rgb" in name or "depth" in name:
+                kwargs = meta_cfg.image_encoder.network_kwargs
+                kwargs.input_shape = shape_meta["all_shapes"][name]
+                kwargs.output_size = embed_size
+                kwargs.language_dim = (
+                    meta_cfg.language_encoder.network_kwargs.input_size
+                )
+                self.image_encoders[name] = {
+                    "input_shape": shape_meta["all_shapes"][name],
+                    "encoder": eval(meta_cfg.image_encoder.network)(**kwargs),
+                }
+
+        self.encoders = nn.ModuleList(
+            [x["encoder"] for x in self.image_encoders.values()]
+        )
+
+        ### 2. encode language
+        meta_cfg.language_encoder.network_kwargs.output_size = embed_size
+        self.language_encoder = eval(meta_cfg.language_encoder.network)(
+            **meta_cfg.language_encoder.network_kwargs
+        )
+
+        # ### 3. encode extra information (e.g. gripper, joint_state)
+        # self.extra_encoder = ExtraModalityTokens(
+        #     use_goal=True,
+        #     extra_num_layers=meta_cfg.extra_num_layers,
+        #     extra_hidden_size=meta_cfg.extra_hidden_size,
+        #     extra_embedding_size=embed_size,
+        # )
+        self.extra_encoder = ExtraModalityTokens(
+            use_joint=True,
+            use_gripper=True,
+            # use_gripper=False,   # for real robot
+            use_ee=False,
+            extra_num_layers=meta_cfg.extra_num_layers,
+            extra_hidden_size=meta_cfg.extra_hidden_size,
+            extra_embedding_size=embed_size,
+        )
+
+        ### 4. define temporal transformer
+        meta_cfg.temporal_position_encoding.network_kwargs.input_size = embed_size
+        self.temporal_position_encoding_fn = eval(
+            meta_cfg.temporal_position_encoding.network
+        )(**meta_cfg.temporal_position_encoding.network_kwargs)
+
+
+        self.temporal_transformer = TransformerDecoder(
+            input_size=embed_size,
+            num_layers=meta_cfg.transformer_num_layers,
+            num_heads=meta_cfg.transformer_num_heads,
+            head_output_size=meta_cfg.transformer_head_output_size,
+            mlp_hidden_size=meta_cfg.transformer_mlp_hidden_size,
+            dropout=meta_cfg.transformer_dropout,
+        )
+
+        self.latent_queue = []
+        # self.max_seq_len = meta_cfg.transformer_max_seq_len
+        self.max_seq_len = cfg.data.meta_seq_len
+
+        transformer_output_dim = embed_size  # embed_size
+        if activation == 'relu':
+            activate_fn = torch.nn.ReLU
+        elif activation == 'leaky-relu':
+            activate_fn = torch.nn.LeakyReLU
+
+        self.latent_dim = latent_dim
+        id_input_dim = transformer_output_dim
+        intermediate_state_dim = 256
+
+        # self.mlp_encoder_layer = torch.nn.Sequential(*[torch.nn.Linear(transformer_output_dim, intermediate_state_dim),
+        #                                                activate_fn(),
+        #                                                torch.nn.Linear(intermediate_state_dim, intermediate_state_dim),
+        #                                                activate_fn(),
+        #                                                torch.nn.Linear(intermediate_state_dim, self.latent_dim * 2)])
+
+        # self.meta_id_layer = MetaIdLayer(id_input_dim,
+        #                                  num_subtasks,
+        #                                  max_subtasks_num=50,  # 10,
+        #                                  id_layer_dims=id_layer_dims,  # [300, 400]
+        #                                  policy_type=policy_type,
+        #                                  subgoal_type=subgoal_type,
+        #                                  activation=activation)     # (64, 300), (300, 400), (400, 17)
+
+    def temporal_encode(self, x, task_id=None):
+        pos_emb = self.temporal_position_encoding_fn(x)
+        x = x + pos_emb.unsqueeze(1)  # (B, T, num_modality, E)
+        sh = x.shape
+        self.temporal_transformer.compute_mask(x.shape)
+
+        x = TensorUtils.join_dimensions(x, 1, 2)  # (B, T*num_modality, E)
+        if self.trans == "moe":
+            x = self.temporal_transformer(x, task_id)
+        else:
+            x = self.temporal_transformer(x)
+        x = x.reshape(*sh)
+        return x[:, :, 0]  # (B, T, E)
+
+    def spatial_encode(self, data):
+        encoded = []
+        # # 1. encode extra
+        extra = self.extra_encoder(data["obs"])  # (B, T, num_extra, E)
+        encoded.append(extra)
+        # 3. encode image
+        for img_name in self.image_encoders.keys():
+            x = data["obs"][img_name]
+            B, T, C, H, W = x.shape
+            img_encoded = self.image_encoders[img_name]["encoder"](
+                x.reshape(B * T, C, H, W),
+                langs=data["task_emb"]
+                .reshape(B, 1, -1)
+                .repeat(1, T, 1)
+                .reshape(B * T, -1),
+            ).view(B, T, 1, -1)
+            encoded.append(img_encoded)
+
+        # 2. encode language, treat it as action token
+        B, T = img_encoded.shape[:2]
+        text_encoded = self.language_encoder(data)  # (B, E)
+        text_encoded = text_encoded.view(B, 1, 1, -1).expand(
+            -1, T, -1, -1
+        )  # (B, T, 1, E)
+        encoded.append(text_encoded)
+
+        encoded = torch.cat(encoded, -2)  # (B, T, num_modalities, E)
+        return encoded
+
+    def forward(self, data):
+        # (B, T, ...)
+        x = self.spatial_encode(data)
+        if self.trans == "moe":
+            z_state = self.temporal_encode(x, data["task_id"])  # (B, T, 64)
+        else:
+            z_state = self.temporal_encode(x)  # (B, T, 64)
+        z_state = z_state.reshape(-1, z_state.shape[-1])  # (Batch, 64)
+        # skill_id = self.meta_id_layer(z_state)  # (Batch, 20)
+        # return skill_id
+        return z_state
+
+    # def predict(self, data):
+    #     # (B, T, ...)
+    #     x = self.spatial_encode(data)
+    #     self.latent_queue.append(x)
+    #     if len(self.latent_queue) > self.max_seq_len:
+    #         self.latent_queue.pop(0)
+    #     x = torch.cat(self.latent_queue, dim=1)  # (B, T, H_all)
+    #     B, T = x.shape[:2]
+    #     if self.trans == "moe":
+    #         z_state = self.temporal_encode(x, data["task_id"])[:, -1]
+    #     else:
+    #         z_state = self.temporal_encode(x)[:, -1]
+    #
+    #     subtask_vector = self.meta_id_layer(z_state)
+    #     # print(subtask_vector.shape)   # (bs, 10)
+    #     subtask_id = torch.argmax(subtask_vector, dim=1)
+    #     # print(subtask_id.shape)   # (bs,)
+    #     subtask_id = subtask_id.cpu().detach().numpy()
+    #
+    #     return {"subtask_id": subtask_id}
+
+    def compute_loss(self, data, reduction="mean"):
+        data = self.preprocess_input(data, train_mode=True)
+        cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction=reduction)
+        subtask_id_prediction = self.forward(data)
+        subtask_id_prediction = subtask_id_prediction[:, :self.num_subtasks]  # masking (32, 2)
+        # print(subtask_id_prediction.shape)
+
+        loss = cross_entropy_loss(subtask_id_prediction.view(-1, self.num_subtasks), data["obs"]["id"].view(-1))  # (32,)
+
+        return loss
+
+    def _get_img_tuple(self, data):
+        img_tuple = tuple(
+            [data["obs"][img_name] for img_name in self.image_encoders.keys()]
+        )
+        return img_tuple
+
+    def _get_aug_output_dict(self, out):
+        img_dict = {
+            img_name: out[idx]
+            for idx, img_name in enumerate(self.image_encoders.keys())
+        }
+        return img_dict
+
+    def preprocess_input(self, data, train_mode=True):
+        if train_mode:  # apply augmentation
+            if self.cfg.train.use_augmentation:
+                img_tuple = self._get_img_tuple(data)
+                aug_out = self._get_aug_output_dict(self.img_aug(img_tuple))
+                for img_name in self.image_encoders.keys():
+                    data["obs"][img_name] = aug_out[img_name]
+            return data
+        else:
+            data = TensorUtils.recursive_dict_list_tuple_apply(
+                data, {torch.Tensor: lambda x: x.unsqueeze(dim=1)}  # add time dimension
+            )
+            data["task_emb"] = data["task_emb"].squeeze(1)
+            if "task_id" in data:
+                data["task_id"] = data["task_id"].squeeze(1)
+        return data
+
+    def reset(self):
+        """
+        Clear all "history" of the policy if there exists any.
+        """
+        self.latent_queue = []
+        self.current_subtask_id = 0
+        self.counter = 0
+        self.prev_subgoal_embedding = None
+        for policy in self.skill_policies.values():
+            policy.reset()
+
