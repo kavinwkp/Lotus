@@ -159,9 +159,12 @@ class MTACTtask(Task):
         action_shape = [7]
         episode_len = cfg.max_episode_len
         obs_shape = dict()
-        obs_shape['proprioceptive'] = [9]
-        obs_shape['agentview_rgb'] = [3, 128, 128]
-        obs_shape['eye_in_hand_rgb'] = [3, 128, 128]
+        # obs_shape['proprioceptive'] = [9]
+        # obs_shape['agentview_rgb'] = [3, 128, 128]
+        # obs_shape['eye_in_hand_rgb'] = [3, 128, 128]
+        obs_shape['proprioceptive'] = [7]
+        obs_shape['agentview_rgb'] = [3, 480, 640]
+        obs_shape['eye_in_hand_rgb'] = [3, 480, 640]
         self.proprioceptive_dim = obs_shape[self.proprio_key][0] if cfg.use_proprio else 1  # 9
         self.multitask = cfg.multitask  # true
         self.obs_type = cfg.obs_type    # pixels
