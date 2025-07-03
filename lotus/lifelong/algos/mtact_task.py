@@ -241,8 +241,9 @@ class MTACTtask(Task):
         observation = torch.cat(observation, dim=1)
 
         joint_states = data["obs"]["joint_states"].float()  # (bs, 1, 7)
-        gripper_states = data["obs"]["gripper_states"].float()  # (bs, 1, 2)
-        proprio = torch.cat([joint_states, gripper_states], dim=-1)  # (bs, 1, 9) T=0
+        # gripper_states = data["obs"]["gripper_states"].float()  # (bs, 1, 2)
+        # proprio = torch.cat([joint_states, gripper_states], dim=-1)  # (bs, 1, 9) T=0
+        proprio = joint_states  # (bs, 1, 7) T=0
 
         proprioceptive = (
             proprio
@@ -259,6 +260,7 @@ class MTACTtask(Task):
         # forward pass
         output = self.policy(
             proprioceptive, observation, action, is_pad, task_emb=data["task_emb"]
+            # proprioceptive, observation, action, is_pad, task_emb=None
         )
 
         # optimize
@@ -312,12 +314,12 @@ class MTACTtask(Task):
             for (idx, data) in enumerate(train_dataloader):
 
                 data["obs"]["agentview_rgb"] = data["obs"]["agentview_rgb"][:, 0:1]
-                data["obs"]["eye_in_hand_rgb"] = data["obs"]["eye_in_hand_rgb"][:, 0:1]
+                # data["obs"]["eye_in_hand_rgb"] = data["obs"]["eye_in_hand_rgb"][:, 0:1]
                 data["obs"]["joint_states"] = data["obs"]["joint_states"][:, 0:1]
-                data["obs"]["gripper_states"] = data["obs"]["gripper_states"][:, 0:1]
+                # data["obs"]["gripper_states"] = data["obs"]["gripper_states"][:, 0:1]
 
-                metrics = self.observe(data)
-                training_loss += metrics["actor_loss"]
+                loss = self.observe(data)["actor_loss"]
+                training_loss += loss
 
             training_loss /= len(train_dataloader)
 
@@ -392,3 +394,150 @@ class MTACTtask(Task):
         #     successes[idx_at_best_succ:] = success_at_best_succ
         # return successes.sum() / cumulated_counter, losses.sum() / cumulated_counter
 
+    def learn_one_task(self, dataset, task_id, benchmark):
+
+        self.start_task(task_id)
+
+        # recover the corresponding manipulation task ids
+        gsz = self.cfg.data.task_group_size  # 1
+        manip_task_ids = list(range(task_id * gsz, (task_id + 1) * gsz))
+
+        model_checkpoint_name = os.path.join(
+            self.experiment_dir, f"task{task_id}_model.pth"
+        )
+
+        train_dataloader = DataLoader(
+            dataset,
+            batch_size=self.cfg.train.batch_size,
+            num_workers=self.cfg.train.num_workers,
+            sampler=RandomSampler(dataset),
+            persistent_workers=True,
+        )
+
+        prev_success_rate = -1.0
+        best_state_dict = self.policy.state_dict()  # currently save the best model
+
+        # for evaluate how fast the agent learns on current task, this corresponds
+        # to the area under success rate curve on the new task.
+        cumulated_counter = 0.0
+        idx_at_best_succ = 0
+        successes = []
+        losses = []
+        T = 1
+
+        task = benchmark.get_task(task_id)
+        task_emb = benchmark.get_task_emb(task_id)
+
+        # start training
+        for epoch in range(1, self.cfg.train.n_epochs + 1):
+
+            t0 = time.time()
+            self.policy.train()
+            training_loss = 0.0
+            for (idx, data) in enumerate(train_dataloader):
+                data["obs"]["agentview_rgb"] = data["obs"]["agentview_rgb"][:, 0:T]  # (bs, T, 3, 480, 640)
+                # data["obs"]["eye_in_hand_rgb"] = data["obs"]["eye_in_hand_rgb"][:, 0:T]
+                data["obs"]["joint_states"] = data["obs"]["joint_states"][:, 0:T]  # (bs, T, 7)
+                # data["obs"]["gripper_states"] = data["obs"]["gripper_states"][:, 0:T]  # (bs, T, 2)
+
+                loss = self.observe(data)["actor_loss"]
+                training_loss += loss
+
+            training_loss /= len(train_dataloader)
+
+            t1 = time.time()
+
+            print(
+                f"[info] Epoch: {epoch:3d} | train loss: {training_loss:5.2f} | time: {(t1 - t0) / 60:4.2f}"
+            )
+
+            # if use_wandb:
+            #     wandb.log({
+            #         f"Training/task_{task_id}_training_loss": training_loss,
+            #         f"Training/task_{task_id}_training_time": (t1 - t0) / 60,
+            #         "Training/step": epoch,
+            #     })
+
+            if epoch > 30 and (epoch % self.cfg.eval.eval_every == 0):  # evaluate BC loss
+                # every eval_every epoch, we evaluate the agent on the current task,
+                # then we pick the best performant agent on the current task as
+                # if it stops learning after that specific epoch. So the stopping
+                # criterion for learning a new task is achieving the peak performance
+                # on the new task. Future work can explore how to decide this stopping
+                # epoch by also considering the agent's performance on old tasks.
+                t0 = time.time()
+                self.policy.eval()
+
+                model_checkpoint_name_ep = os.path.join(self.experiment_dir, f"task{task_id}_model_ep{epoch}.pth")
+                torch_save_model(self.policy, model_checkpoint_name_ep, cfg=self.cfg)
+                losses.append(training_loss)
+
+                if self.cfg.lifelong.eval_in_train:
+                    task_str = f"k{task_id}_e{epoch // self.cfg.eval.eval_every}"
+                    sim_states = (
+                        result_summary[task_str] if self.cfg.eval.save_sim_states else None
+                    )
+                    success_rate = evaluate_one_task_success(
+                        cfg=self.cfg,
+                        algo=self,
+                        task=task,
+                        task_emb=task_emb,
+                        task_id=task_id,
+                        sim_states=sim_states,
+                        task_str="",
+                    )
+                    successes.append(success_rate)
+                    print(f"success_rate for task {task_id}: ", success_rate)
+                else:
+                    success_rate = 0.0
+
+                if prev_success_rate < success_rate:
+                    torch_save_model(self.policy, model_checkpoint_name, cfg=self.cfg)
+                    prev_success_rate = success_rate
+                    idx_at_best_succ = len(losses) - 1
+
+                # t1 = time.time()
+                #
+                # cumulated_counter += 1.0
+                # ci = confidence_interval(success_rate, self.cfg.eval.n_eval)
+                # tmp_successes = np.array(successes)
+                # tmp_successes[idx_at_best_succ:] = successes[idx_at_best_succ]
+                # print(
+                #     f"[info] Epoch: {epoch:3d} | succ: {success_rate:4.2f} ± {ci:4.2f} | best succ: {prev_success_rate} "
+                #     + f"| succ. AoC {tmp_successes.sum() / cumulated_counter:4.2f} | time: {(t1 - t0) / 60:4.2f}",
+                #     flush=True,
+                # )
+                # if use_wandb:
+                #     wandb.log({
+                #         f"Training/task_{task_id}_success_rate": success_rate,
+                #         f"Training/task_{task_id}_best_success_rate": prev_success_rate,
+                #         f"Training/task_{task_id}_AoC": tmp_successes.sum() / cumulated_counter,
+                #         f"Training/task_{task_id}_eval_time": (t1 - t0) / 60,
+                #         "Training/step": epoch,
+                #     })
+
+            if self.scheduler is not None and epoch > 0:
+                self.scheduler.step()
+
+        # load the best performance agent on the current task
+        self.policy.load_state_dict(torch_load_model(model_checkpoint_name)[0])
+
+        # end learning the current task, some algorithms need post-processing
+        self.end_task(dataset, task_id, benchmark)
+
+        # return the metrics regarding forward transfer
+        losses = np.array(losses)
+        successes = np.array(successes)
+        auc_checkpoint_name = os.path.join(self.experiment_dir, f"task{task_id}_auc.log")
+        torch.save(
+            {
+                "success": successes,
+                "loss": losses,
+            },
+            auc_checkpoint_name,
+        )
+
+        # pretend that the agent stops learning once it reaches the peak performance
+        # losses[idx_at_best_succ:] = losses[idx_at_best_succ]
+        # successes[idx_at_best_succ:] = successes[idx_at_best_succ]
+        # return successes.sum() / cumulated_counter, losses.sum() / cumulated_counter
