@@ -469,6 +469,7 @@ class MTACTtask(Task):
                 self.policy.eval()
 
                 model_checkpoint_name_ep = os.path.join(self.experiment_dir, f"task{task_id}_model_ep{epoch}.pth")
+                print(f"[info] Save Model in {model_checkpoint_name_ep}")
                 torch_save_model(self.policy, model_checkpoint_name_ep, cfg=self.cfg)
                 losses.append(training_loss)
 
