@@ -603,7 +603,7 @@ class BCTransformerMoEPolicy(BasePolicy):
 
         # self.policy_head = nn.Linear(embed_size, shape_meta["ac_dim"])
 
-        self.num_queries = 10
+        self.num_queries = cfg.data.seq_len
         self.step = 0
 
         self.policy_head = nn.Linear(embed_size, shape_meta["ac_dim"] * self.num_queries)
@@ -1231,13 +1231,13 @@ class BCDiffusionPolicy(BasePolicy):
         self.policy_head = DiffusionPolicy(obs_dim=embed_size,
                                            act_dim=shape_meta["ac_dim"],
                                            obs_horizon=10,
-                                           pred_horizon=10,
+                                           pred_horizon=cfg.data.seq_len,
                                            hidden_dim=embed_size,
                                            num_layers=2,
                                            policy_type="transformer",
                                            device=cfg.device)
 
-        self.num_queries = 10
+        self.num_queries = self.cfg.data.seq_len
         self.step = 0
 
         self.all_time_actions = torch.zeros((20, 600, 600 + self.num_queries, shape_meta["ac_dim"])).to(cfg.device)
