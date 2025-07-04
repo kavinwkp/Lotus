@@ -435,9 +435,9 @@ class MTACTtask(Task):
             self.policy.train()
             training_loss = 0.0
             for (idx, data) in enumerate(train_dataloader):
-                data["obs"]["agentview_rgb"] = data["obs"]["agentview_rgb"][:, 0:T]  # (bs, T, 3, 480, 640)
+                # data["obs"]["agentview_rgb"] = data["obs"]["agentview_rgb"][:, 0:T]  # (bs, T, 3, 480, 640)
                 # data["obs"]["eye_in_hand_rgb"] = data["obs"]["eye_in_hand_rgb"][:, 0:T]
-                data["obs"]["joint_states"] = data["obs"]["joint_states"][:, 0:T]  # (bs, T, 7)
+                # data["obs"]["joint_states"] = data["obs"]["joint_states"][:, 0:T]  # (bs, T, 7)
                 # data["obs"]["gripper_states"] = data["obs"]["gripper_states"][:, 0:T]  # (bs, T, 2)
 
                 loss = self.observe(data)["actor_loss"]
