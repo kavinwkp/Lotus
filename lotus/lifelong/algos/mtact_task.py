@@ -395,7 +395,7 @@ class MTACTtask(Task):
         # return successes.sum() / cumulated_counter, losses.sum() / cumulated_counter
 
     def learn_one_task(self, dataset, task_id, benchmark):
-        print(f"[info] start train task: {benchmark.get_task(task_id).language}")
+        print(f"[info] start train task {task_id}: {benchmark.get_task(task_id).language}")
         self.start_task(task_id)
 
         # recover the corresponding manipulation task ids
