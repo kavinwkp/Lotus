@@ -395,7 +395,7 @@ class MTACTtask(Task):
         # return successes.sum() / cumulated_counter, losses.sum() / cumulated_counter
 
     def learn_one_task(self, dataset, task_id, benchmark):
-
+        print(f"[info] start train task: {benchmark.get_task(task_id).language}")
         self.start_task(task_id)
 
         # recover the corresponding manipulation task ids
@@ -520,10 +520,10 @@ class MTACTtask(Task):
                 self.scheduler.step()
 
         # load the best performance agent on the current task
-        self.policy.load_state_dict(torch_load_model(model_checkpoint_name)[0])
+        # self.policy.load_state_dict(torch_load_model(model_checkpoint_name)[0])
 
         # end learning the current task, some algorithms need post-processing
-        self.end_task(dataset, task_id, benchmark)
+        # self.end_task(dataset, task_id, benchmark)
 
         # return the metrics regarding forward transfer
         losses = np.array(losses)
