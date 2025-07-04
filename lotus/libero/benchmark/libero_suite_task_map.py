@@ -157,6 +157,7 @@ libero_task_map = {
     "real_10": [
         "pickup_red_cube_and_banana_into_backet",
         "pickup_corn_from_box_and_put_banana_into_box",
+        "open_drawer_and_put_battery_on_the_left_side_of_cube_inside",
     ],
 
     "rw_train_set1": [

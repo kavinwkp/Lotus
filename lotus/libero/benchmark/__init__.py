@@ -100,6 +100,14 @@ task_maps["real_10"]["pickup_corn_from_box_and_put_banana_into_box"] = Task(
             bddl_file=None,
             init_states_file=None,
         )
+task_maps["real_10"]["open_drawer_and_put_battery_on_the_left_side_of_cube_inside"] = Task(
+            name="open_drawer_and_put_battery_on_the_left_side_of_cube_inside",
+            language="open drawer and put battery on the left side of cube inside",
+            problem="real_10",
+            problem_folder="real_10",
+            bddl_file=None,
+            init_states_file=None,
+        )
 
 task_orders = [
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -240,7 +248,7 @@ class REAL_10(Benchmark):
 
     def _make_benchmark(self):
 
-        custom_task_order = [0,1]
+        custom_task_order = [0,1,2]
         tasks = list(task_maps[self.name].values())
         if self.name == "libero_90":
             self.tasks = tasks
