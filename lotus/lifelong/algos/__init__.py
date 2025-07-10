@@ -7,6 +7,6 @@ from lotus.lifelong.algos.agem import AGEM
 from lotus.lifelong.algos.ewc import EWC
 from lotus.lifelong.algos.packnet import PackNet
 from lotus.lifelong.algos.single_task import SingleTask
-from lotus.lifelong.algos.skill import SubSkill, MetaController, apply_lora
+from lotus.lifelong.algos.skill import SubSkill, MetaController, apply_lora, SubACTSkill
 from lotus.lifelong.algos.acil_task import ACILLearner
 from lotus.lifelong.algos.diffusion_task import DiffusionTask
