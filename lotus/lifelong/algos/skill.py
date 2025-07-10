@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import ConcatDataset, DataLoader, RandomSampler
 
-from lotus.lifelong.algos.base import Sequential
+from lotus.lifelong.algos.base import Sequential, Task
 from lotus.lifelong.metric import *
 from lotus.lifelong.models import *
 from lotus.lifelong.utils import *
@@ -90,7 +90,7 @@ class SubSkill(Sequential):
                 "camera_names": self.pixel_keys,  # agentview_rgb, eye_in_hand_rgb
                 "state_dim": 7,
                 "action_dim": 7,
-                "multitask": False,
+                "multitask": True,
                 "obs_type": 'pixels',
                 "temporal_agg": True,
             }
@@ -134,7 +134,7 @@ class SubSkill(Sequential):
                 **self.cfg.train.scheduler.kwargs,
             )
 
-    def mtact_observe(self, data):
+    def mtact_observe(self, data, task_emb):
 
         data = self.map_tensor_to_device(data)
 
@@ -142,7 +142,7 @@ class SubSkill(Sequential):
         # if len(data["actions"].shape) == 4:
         #     action = action[:, 0]
         is_pad = torch.zeros(action.shape[0], action.shape[1], dtype=torch.bool).to(self.cfg.device)
-
+        task_emb = task_emb.to(self.cfg.device).repeat(action.shape[0], 1)
         # lang projection
         # task_emb = data["task_emb"].float()     # (bs, 768)
         # task_emb = self.language_projector(task_emb)    # (bs, )
@@ -171,7 +171,7 @@ class SubSkill(Sequential):
 
         # forward pass
         output = self.policy(
-            proprioceptive, observation, action, is_pad
+            proprioceptive, observation, action, is_pad, task_emb=task_emb
             # task_emb=data["task_emb"]
         )
 
@@ -219,21 +219,21 @@ class SubSkill(Sequential):
             training_loss = 0.0
             for (idx, data) in enumerate(train_dataloader):
                 # print(data["obs"]["subgoal"].shape)   # (bs, 10, 3, 128, 128)
-                data["obs"]["agentview_rgb"] = data["obs"]["agentview_rgb"][:, 0:1]     # (bs, 1, 3, 128, 128)
+                # data["obs"]["agentview_rgb"] = data["obs"]["agentview_rgb"][:, 0:1]     # (bs, 1, 3, 128, 128)
                 # data["obs"]["eye_in_hand_rgb"] = data["obs"]["eye_in_hand_rgb"][:, 0:1]
-                data["obs"]["joint_states"] = data["obs"]["joint_states"][:, 0:1]       # (bs, 1, 7)
+                # data["obs"]["joint_states"] = data["obs"]["joint_states"][:, 0:1]       # (bs, 1, 7)
                 # data["obs"]["gripper_states"] = data["obs"]["gripper_states"][:, 0:1]   # (bs, 1, 2)
                 # bs = data["obs"]["gripper_states"].shape[0]
                 # data["task_emb"] = task_emb[7].unsqueeze(0).repeat(bs, 1)  # (bs, 768)
                 if self.skill_policy == 'mtact':
-                    metrics = self.mtact_observe(data)
-                    training_loss += metrics["actor_loss"]
+                    loss = self.mtact_observe(data, task_emb)["actor_loss"]
+                    training_loss += loss
                 else:
                     loss = self.observe(data)
                     training_loss += loss
                 # break
 
-            # training_loss /= len(train_dataloader)
+            training_loss /= len(train_dataloader)
             # else:  # just evaluate the zero-shot performance on 0-th epoch
             #     training_loss = 0.0
             #     for (idx, data) in enumerate(train_dataloader):
@@ -409,6 +409,352 @@ class SubSkill(Sequential):
 
         return losses.sum() / cumulated_counter
 
+
+class SubACTSkill(Task):
+    """
+    The SubSkill policy for skill learning
+    learning algorithms.
+    """
+
+    def __init__(self, n_tasks, cfg):
+        super().__init__(n_tasks, cfg)
+
+        self.skill_policy = "mtact"
+        self.pixel_keys = ['agentview_rgb', 'eye_in_hand_rgb']
+        self.use_proprio = True
+        self.use_tb = True
+
+        policy_config = {
+            "lr": 0.0001,
+            "num_queries": 50,
+            "kl_weight": 10,
+            "hidden_dim": 512,
+            "dim_feedforward": 512,
+            "lr_backbone": 1e-4,
+            "backbone": 'resnet18',
+            "enc_layers": 4,  # 4
+            "dec_layers": 7,
+            "nheads": 8,
+            "camera_names": self.pixel_keys,  # agentview_rgb, eye_in_hand_rgb
+            "state_dim": 7,
+            "action_dim": 7,
+            "multitask": True,
+            "obs_type": 'pixels',
+            "temporal_agg": True,
+        }
+        self.policy = ACTPolicy(policy_config, self.cfg.device)
+
+
+    def start_task(self, task):
+        super().start_task(task)
+
+    def finetune_init(self):
+        total_param = sum(p.numel() for p in self.policy.parameters())
+        print(f"[info] total param: {total_param}")
+        lora_param = sum(p.numel() for name, p in self.policy.named_parameters() if 'lora' in name)
+        print(f"[info] lora param: {lora_param}")
+        print(f"[info] {lora_param / total_param * 100:.2f}%")
+
+        for name, param in self.policy.named_parameters():
+            if 'lora' not in name:
+                param.requires_grad = False
+
+        self.lora_params = []
+        for name, param in self.policy.named_parameters():
+            if 'lora' in name:
+                self.lora_params.append(param)
+
+    def start_finetune_task(self):
+        """
+        What the algorithm does at the beginning of learning each lifelong task.
+        """
+        self.finetune_init()
+        # TODO: initialize the optimizer and scheduler on LoRA params
+        self.optimizer = eval(self.cfg.train.optimizer.name)(
+            self.lora_params, **self.cfg.train.optimizer.kwargs
+        )
+
+        self.scheduler = None
+        if self.cfg.train.scheduler is not None:
+            self.scheduler = eval(self.cfg.train.scheduler.name)(
+                self.optimizer,
+                T_max=self.cfg.train.n_epochs,
+                **self.cfg.train.scheduler.kwargs,
+            )
+
+    def mtact_observe(self, data, task_emb):
+
+        data = self.map_tensor_to_device(data)
+
+        action = data["actions"].float()  # (bs, 10, 7)
+        # if len(data["actions"].shape) == 4:
+        #     action = action[:, 0]
+        is_pad = torch.zeros(action.shape[0], action.shape[1], dtype=torch.bool).to(self.cfg.device)
+        task_emb = task_emb.to(self.cfg.device).repeat(action.shape[0], 1)
+        # lang projection
+        # task_emb = data["task_emb"].float()     # (bs, 768)
+        # task_emb = self.language_projector(task_emb)    # (bs, )
+
+        observation = []
+        for key in self.pixel_keys:
+            observation.append(data["obs"][key].float())
+        observation = torch.cat(observation, dim=1)
+
+        joint_states = data["obs"]["joint_states"].float()  # (bs, 1, 7)
+        # gripper_states = data["obs"]["gripper_states"].float()  # (bs, 1, 2)
+        # proprio = torch.cat([joint_states, gripper_states], dim=-1)  # (bs, 1, 9) T=0
+        proprio = joint_states
+
+        proprioceptive = (
+            proprio
+            if self.use_proprio
+            else torch.zeros(observation.shape[0], 1, self.proprioceptive_dim)
+            .to(self.device)
+            .float()
+        )
+
+        # if self.obs_type == "pixels":
+        #     observation = observation / 255.0
+        proprioceptive = proprioceptive[:, 0]
+
+        # forward pass
+        output = self.policy(
+            proprioceptive, observation, action, is_pad, task_emb=task_emb
+            # task_emb=data["task_emb"]
+        )
+
+        # optimize
+        self.optimizer.zero_grad(set_to_none=True)
+        output["loss"].backward()
+        if self.cfg.train.grad_clip is not None:
+            grad_norm = nn.utils.clip_grad_norm_(
+                self.policy.parameters(), self.cfg.train.grad_clip
+            )
+        self.optimizer.step()
+
+        metrics = dict()
+        if self.use_tb:
+            metrics["actor_loss"] = output["loss"].item()
+            metrics["actor_l1"] = output["l1"].item()
+            metrics["actor_kl"] = output["kl"].item()
+
+        return metrics
+
+    def learn_one_skill(self, dataset, skill_id, use_wandb, task_emb=None):
+        self.start_task(-1)
+
+        model_checkpoint_name = os.path.join(
+            self.experiment_dir, f"skill{skill_id}_model.pth"
+        )
+
+        train_dataloader = DataLoader(
+            dataset,
+            batch_size=self.cfg.train.batch_size,
+            num_workers=0,  # self.cfg.train.num_workers,
+            sampler=RandomSampler(dataset),
+            # persistent_workers=True,
+        )
+        # start training
+        print(f"[info] start training skill {skill_id}")
+        prev_training_loss = None
+        losses = []
+        cumulated_counter = 0.0
+        for epoch in range(1, self.cfg.train.n_epochs + 1):
+            # for epoch in range(0, 15 + 1):
+            t0 = time.time()
+            # if epoch > 0 or (self.cfg.pretrain):  # update
+            self.policy.train()
+            training_loss = 0.0
+            for (idx, data) in enumerate(train_dataloader):
+                # print(data["obs"]["subgoal"].shape)   # (bs, 10, 3, 128, 128)
+                # data["obs"]["agentview_rgb"] = data["obs"]["agentview_rgb"][:, 0:1]     # (bs, 1, 3, 128, 128)
+                # data["obs"]["eye_in_hand_rgb"] = data["obs"]["eye_in_hand_rgb"][:, 0:1]
+                # data["obs"]["joint_states"] = data["obs"]["joint_states"][:, 0:1]       # (bs, 1, 7)
+                # data["obs"]["gripper_states"] = data["obs"]["gripper_states"][:, 0:1]   # (bs, 1, 2)
+                # bs = data["obs"]["gripper_states"].shape[0]
+                # data["task_emb"] = task_emb[7].unsqueeze(0).repeat(bs, 1)  # (bs, 768)
+                if self.skill_policy == 'mtact':
+                    loss = self.mtact_observe(data, task_emb)["actor_loss"]
+                    training_loss += loss
+                else:
+                    loss = self.observe(data)
+                    training_loss += loss
+                # break
+
+            training_loss /= len(train_dataloader)
+            # else:  # just evaluate the zero-shot performance on 0-th epoch
+            #     training_loss = 0.0
+            #     for (idx, data) in enumerate(train_dataloader):
+            #         loss = self.eval_observe(data)
+            #         training_loss += loss
+            #     training_loss /= len(train_dataloader)
+            t1 = time.time()
+
+            print(
+                f"[info] Epoch: {epoch:3d} | train loss: {training_loss:5.4f} | time: {(t1 - t0) / 60:4.2f}"
+            )
+
+            if self.skill_policy == "diffusion":
+                self.policy.policy_head.ema_step()
+
+            if use_wandb:
+                wandb.log({
+                    f"Skill_Training/skill{skill_id}_training_loss": training_loss,
+                    f"Skill_Training/skill{skill_id}_training_time": (t1 - t0) / 60,
+                    "Skill_Training/step": epoch,
+                })
+
+            if self.skill_policy == 'mtact':
+                torch_save_model(self.policy, model_checkpoint_name, cfg=self.cfg)
+            if epoch > 100 and (epoch % self.cfg.eval.eval_every == 0):  # evaluate BC loss
+                t0 = time.time()
+                self.policy.eval()
+                losses.append(training_loss)
+
+                testing_loss = 0.0
+                for (idx, data) in enumerate(train_dataloader):
+                    data["obs"]["agentview_rgb"] = data["obs"]["agentview_rgb"][:, 0:1]  # (bs, 1, 3, 128, 128)
+                    # data["obs"]["eye_in_hand_rgb"] = data["obs"]["eye_in_hand_rgb"][:, 0:1]
+                    data["obs"]["joint_states"] = data["obs"]["joint_states"][:, 0:1]  # (bs, 1, 7)
+                    # data["obs"]["gripper_states"] = data["obs"]["gripper_states"][:, 0:1]  # (bs, 1, 2)
+                    # bs = data["obs"]["gripper_states"].shape[0]
+                    # data["task_emb"] = task_emb[7].unsqueeze(0).repeat(bs, 1)  # (bs, 768)
+                    loss = self.eval_observe(data)
+                    testing_loss += loss
+                # testing_loss /= len(train_dataloader)
+
+                if prev_training_loss is None:
+                    prev_training_loss = testing_loss
+                if prev_training_loss >= testing_loss:
+                    torch_save_model(self.policy, model_checkpoint_name, cfg=self.cfg)
+                    prev_training_loss = testing_loss
+
+                t1 = time.time()
+                cumulated_counter += 1.0
+
+            if self.scheduler is not None and epoch > 0:
+                self.scheduler.step()
+
+        # load the best policy if there is any
+        # if self.cfg.lifelong.eval_in_train:
+        #     self.policy.load_state_dict(torch_load_model(model_checkpoint_name)[0])
+        self.policy.load_state_dict(torch_load_model(model_checkpoint_name)[0])
+
+        # return the metrics regarding skill_training
+        losses = np.array(losses)
+
+        return losses.sum() / cumulated_counter
+
+    def load_skill(self, skill_id, experiment_dir):
+        model_checkpoint_name = os.path.join(
+            experiment_dir, f"skill{skill_id}_model.pth"
+        )
+        if os.path.exists(model_checkpoint_name):
+            self.policy.load_state_dict(torch_load_model(model_checkpoint_name)[0])
+        model_checkpoint_save_name = os.path.join(
+            self.experiment_dir, f"skill{skill_id}_model.pth"
+        )
+        torch_save_model(self.policy, model_checkpoint_save_name, cfg=self.cfg)
+        # self.policy.eval()
+
+    def finetune_one_skill(self, dataset, skill_id, use_wandb, task_emb=None):
+        # self.start_task(-1)
+        self.start_finetune_task()
+
+        train_dataloader = DataLoader(
+            dataset,
+            batch_size=self.cfg.train.batch_size,
+            num_workers=0,  # self.cfg.train.num_workers,
+            sampler=RandomSampler(dataset),
+            # persistent_workers=True,
+        )
+        # start training
+        print(f"[info] start finetune skill {skill_id}")
+        prev_training_loss = None
+        losses = []
+        cumulated_counter = 0.0
+        for epoch in range(1, self.cfg.train.n_epochs + 1):
+            # for epoch in range(0, 15 + 1):
+            t0 = time.time()
+            # if epoch > 0 or (self.cfg.pretrain):  # update
+            self.policy.train()
+            training_loss = 0.0
+            for (idx, data) in enumerate(train_dataloader):
+                # print(data["obs"]["subgoal"].shape)   # (bs, 10, 3, 128, 128)
+                data["obs"]["agentview_rgb"] = data["obs"]["agentview_rgb"][:, 0:1]  # (bs, 1, 3, 128, 128)
+                data["obs"]["eye_in_hand_rgb"] = data["obs"]["eye_in_hand_rgb"][:, 0:1]
+                data["obs"]["joint_states"] = data["obs"]["joint_states"][:, 0:1]  # (bs, 1, 7)
+                data["obs"]["gripper_states"] = data["obs"]["gripper_states"][:, 0:1]  # (bs, 1, 2)
+                # bs = data["obs"]["gripper_states"].shape[0]
+                # data["task_emb"] = task_emb[7].unsqueeze(0).repeat(bs, 1)  # (bs, 768)
+                loss = self.observe(data)
+                training_loss += loss
+                # break
+
+            # training_loss /= len(train_dataloader)
+            # else:  # just evaluate the zero-shot performance on 0-th epoch
+            #     training_loss = 0.0
+            #     for (idx, data) in enumerate(train_dataloader):
+            #         loss = self.eval_observe(data)
+            #         training_loss += loss
+            #     training_loss /= len(train_dataloader)
+            t1 = time.time()
+
+            print(
+                f"[info] Epoch: {epoch:3d} | train loss: {training_loss:5.4f} | time: {(t1 - t0) / 60:4.2f}"
+            )
+
+            if self.skill_policy == "diffusion":
+                self.policy.policy_head.ema_step()
+
+            if use_wandb:
+                wandb.log({
+                    f"Skill_Training/skill{skill_id}_training_loss": training_loss,
+                    f"Skill_Training/skill{skill_id}_training_time": (t1 - t0) / 60,
+                    "Skill_Training/step": epoch,
+                })
+
+            if epoch > 10 and (epoch % self.cfg.eval.eval_every == 0):  # evaluate BC loss
+                t0 = time.time()
+                self.policy.eval()
+                losses.append(training_loss)
+
+                testing_loss = 0.0
+                for (idx, data) in enumerate(train_dataloader):
+                    data["obs"]["agentview_rgb"] = data["obs"]["agentview_rgb"][:, 0:1]  # (bs, 1, 3, 128, 128)
+                    data["obs"]["eye_in_hand_rgb"] = data["obs"]["eye_in_hand_rgb"][:, 0:1]
+                    data["obs"]["joint_states"] = data["obs"]["joint_states"][:, 0:1]  # (bs, 1, 7)
+                    data["obs"]["gripper_states"] = data["obs"]["gripper_states"][:, 0:1]  # (bs, 1, 2)
+                    # bs = data["obs"]["gripper_states"].shape[0]
+                    # data["task_emb"] = task_emb[7].unsqueeze(0).repeat(bs, 1)  # (bs, 768)
+                    loss = self.eval_observe(data)
+                    testing_loss += loss
+                # testing_loss /= len(train_dataloader)
+
+                if prev_training_loss is None:
+                    prev_training_loss = testing_loss
+                if prev_training_loss >= testing_loss:
+                    model_checkpoint_name = os.path.join(
+                        self.experiment_dir, f"skill{skill_id}_model_ep{epoch}.pth"
+                    )
+                    torch_save_model(self.policy, model_checkpoint_name, cfg=self.cfg)
+                    prev_training_loss = testing_loss
+
+                t1 = time.time()
+                cumulated_counter += 1.0
+
+            if self.scheduler is not None and epoch > 0:
+                self.scheduler.step()
+
+        # load the best policy if there is any
+        # if self.cfg.lifelong.eval_in_train:
+        #     self.policy.load_state_dict(torch_load_model(model_checkpoint_name)[0])
+        self.policy.load_state_dict(torch_load_model(model_checkpoint_name)[0])
+
+        # return the metrics regarding skill_training
+        losses = np.array(losses)
+
+        return losses.sum() / cumulated_counter
 
 # class SubSkill(Sequential):
 #     """
